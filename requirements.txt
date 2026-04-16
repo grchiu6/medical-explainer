@@ -8,3 +8,4 @@ rouge-score>=0.1.2
 nltk>=3.8.0
 kagglehub>=0.3.0
 datasets>=2.18.0
+pytest>=8.0.0
