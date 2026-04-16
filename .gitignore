@@ -1,0 +1,14 @@
+# Secrets
+.env
+
+# Data (large files, re-downloadable)
+data/himed/
+
+# Model outputs (regeneratable)
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
