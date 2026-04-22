@@ -36,6 +36,17 @@ Question: {question}
 
 Answer:"""
 
+# MCQ prompt: instructions in English (model follows English instructions
+# better), question in Hindi (the actual content). The strict
+# "ONLY the letter" instruction makes the output trivial to parse.
+# Without it, models tend to output explanations like
+# "उत्तर A है क्योंकि..." which is harder to score reliably.
+_MCQ_PROMPT = """You are answering a multiple-choice medical question in Hindi. Read the question and the options carefully, then respond with ONLY the letter of the correct answer (A, B, C, D, or E). Do not explain. Do not write anything except the single letter.
+
+Question: {question}
+
+Answer (single letter only):"""
+
 
 def build_prompt(question: str, context: str) -> str:
     """Build the prompt string for a given question and optional context.
@@ -60,3 +71,20 @@ def build_prompt(question: str, context: str) -> str:
     if context.strip():
         return _PROMPT_WITH_CONTEXT.format(question=question, context=context)
     return _PROMPT_WITHOUT_CONTEXT.format(question=question)
+
+
+def build_mcq_prompt(question: str) -> str:
+    """Build the prompt for a multiple-choice question (HiMed format).
+
+    The question string is expected to already include the options inline,
+    e.g. "Question?\\nA. ...\\nB. ...\\nC. ...\\nD. ...\\nE. ...".
+    The HiMed loader produces questions in this exact form, so callers
+    typically just forward the loader's "question" field directly.
+
+    Args:
+        question: Hindi question text with embedded A-E options.
+
+    Returns:
+        A formatted prompt string ready to send to any model.
+    """
+    return _MCQ_PROMPT.format(question=question)

@@ -14,6 +14,7 @@ import pytest
 import torch
 
 from models.airavata import get_answer
+from models.base import build_prompt
 
 
 # Check if a GPU (CUDA device) is available.
@@ -32,9 +33,10 @@ def test_get_answer_returns_nonempty_string():
     loads and produces output. Correctness is measured later with
     BLEU/ROUGE across the full dataset.
     """
-    answer = get_answer(
+    prompt = build_prompt(
         question="मधुमेह के लक्षण क्या हैं?",
-        context="मधुमेह एक चयापचय रोग है जिसमें रक्त शर्करा का स्तर बढ़ जाता है।"
+        context="मधुमेह एक चयापचय रोग है जिसमें रक्त शर्करा का स्तर बढ़ जाता है।",
     )
+    answer = get_answer(prompt)
     assert isinstance(answer, str), "Answer should be a string"
     assert len(answer) > 0, "Answer should not be empty"

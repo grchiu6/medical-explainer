@@ -25,7 +25,7 @@ def _find_data_file() -> Path:
     Raises:
         FileNotFoundError: If the file hasn't been downloaded yet.
     """
-    path = Path(__file__).parent / "indicqa_hi.json"
+    path = Path(__file__).parent / "indicqa" / "indicqa_hi.json"
     if not path.exists():
         raise FileNotFoundError(
             f"Data file not found at {path}. "

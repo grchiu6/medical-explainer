@@ -36,8 +36,6 @@ Prompt format: https://huggingface.co/ai4bharat/Airavata
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from models.base import build_prompt
-
 # The model's name on HuggingFace — like a URL for the model.
 # HuggingFace is like GitHub but for ML models.
 _MODEL_NAME = "ai4bharat/Airavata"
@@ -124,7 +122,7 @@ def _format_for_airavata(prompt_text: str) -> str:
     prompt format. Getting this wrong is one of the most common mistakes.
 
     Args:
-        prompt_text: The output from build_prompt() — our shared prompt.
+        prompt_text: The pre-built prompt text (from evaluate.py).
 
     Returns:
         The prompt wrapped in Airavata's chat format.
@@ -132,16 +130,17 @@ def _format_for_airavata(prompt_text: str) -> str:
     return f"<|user|>\n{prompt_text}\n<|assistant|>\n"
 
 
-def get_answer(question: str, context: str) -> str:
+def get_answer(prompt: str) -> str:
     """Generate an answer using Airavata.
 
-    Same interface as gemini.py's get_answer() — takes a question
-    and context, returns an answer string. The evaluation runner
-    doesn't need to know whether it's calling an API or a local model.
+    Same interface as gemini.py's get_answer() — takes a pre-built
+    prompt, returns an answer string. The evaluation runner builds
+    the right prompt for the task (extractive, MCQ, etc.) and passes
+    it in. This file just handles inference — it doesn't care what
+    kind of task the prompt represents.
 
     Args:
-        question: The question text (in Hindi).
-        context: The passage providing context.
+        prompt: The fully-formatted prompt string.
 
     Returns:
         The model's answer as a string.
@@ -149,9 +148,8 @@ def get_answer(question: str, context: str) -> str:
     # Step 1: Load model if not already loaded
     _load_model()
 
-    # Step 2: Build the shared prompt, then wrap in Airavata's format
-    raw_prompt = build_prompt(question, context)
-    formatted = _format_for_airavata(raw_prompt)
+    # Step 2: Wrap the prompt in Airavata's expected chat format
+    formatted = _format_for_airavata(prompt)
 
     # Step 3: Tokenize — convert text to numbers
     # .to(device) moves the numbers onto the GPU so the model can process them

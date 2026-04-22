@@ -14,6 +14,7 @@ import pytest
 from dotenv import load_dotenv
 load_dotenv()
 
+from models.base import build_prompt
 from models.gemini import get_answer
 
 
@@ -33,9 +34,10 @@ def test_get_answer_returns_nonempty_string():
     just that the API call works and returns something. We check correctness
     later with BLEU/ROUGE scoring across the full dataset.
     """
-    answer = get_answer(
+    prompt = build_prompt(
         question="मधुमेह के लक्षण क्या हैं?",
-        context="मधुमेह एक चयापचय रोग है जिसमें रक्त शर्करा का स्तर बढ़ जाता है।"
+        context="मधुमेह एक चयापचय रोग है जिसमें रक्त शर्करा का स्तर बढ़ जाता है।",
     )
+    answer = get_answer(prompt)
     assert isinstance(answer, str), "Answer should be a string"
     assert len(answer) > 0, "Answer should not be empty"

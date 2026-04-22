@@ -31,8 +31,6 @@ Source: https://huggingface.co/FreedomIntelligence/Apollo-7B
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from models.base import build_prompt
-
 # The model's identifier on HuggingFace.
 _MODEL_NAME = "FreedomIntelligence/Apollo-7B"
 
@@ -81,7 +79,7 @@ def _format_for_apollo(prompt_text: str) -> str:
     will add <|endoftext|> itself when it's done.
 
     Args:
-        prompt_text: The output from build_prompt().
+        prompt_text: The pre-built prompt text (from evaluate.py).
 
     Returns:
         The prompt wrapped in Apollo's chat format.
@@ -89,16 +87,15 @@ def _format_for_apollo(prompt_text: str) -> str:
     return f"User:{prompt_text}\nAssistant:"
 
 
-def get_answer(question: str, context: str) -> str:
+def get_answer(prompt: str) -> str:
     """Generate an answer using Apollo-7B.
 
-    Same interface as gemini.py and airavata.py. The evaluation
-    runner calls this function identically regardless of which
-    model it's using.
+    Same interface as gemini.py and airavata.py — takes a pre-built
+    prompt, returns an answer string. The caller (evaluate.py) is
+    responsible for choosing the right prompt template for the task.
 
     Args:
-        question: The question text (in Hindi).
-        context: The passage providing context.
+        prompt: The fully-formatted prompt string.
 
     Returns:
         The model's answer as a string.
@@ -106,9 +103,8 @@ def get_answer(question: str, context: str) -> str:
     # Step 1: Load model if not already loaded
     _load_model()
 
-    # Step 2: Build shared prompt, wrap in Apollo's format
-    raw_prompt = build_prompt(question, context)
-    formatted = _format_for_apollo(raw_prompt)
+    # Step 2: Wrap the prompt in Apollo's chat format
+    formatted = _format_for_apollo(prompt)
 
     # Step 3: Tokenize (text → numbers)
     device = next(_model.parameters()).device

@@ -24,8 +24,6 @@ import time
 from dotenv import load_dotenv
 from google import genai
 
-from models.base import build_prompt
-
 # load_dotenv() reads the .env file and makes those values available
 # via os.getenv(). This keeps secrets out of your code.
 load_dotenv()
@@ -64,17 +62,16 @@ def _get_client():
     return _client
 
 
-def get_answer(question: str, context: str) -> str:
-    """Send a question to Gemini and return the answer.
+def get_answer(prompt: str) -> str:
+    """Send a pre-built prompt to Gemini and return the answer.
 
-    This is the function that the evaluation runner calls. It has the
-    same signature (same inputs and output type) as get_answer() in
-    every other model file. This consistency is what lets the runner
-    treat all models identically.
+    The caller (evaluate.py) is responsible for building the prompt
+    using the right template for the task (extractive vs MCQ etc.).
+    This file just handles the API plumbing — it doesn't know or care
+    what kind of task the prompt represents.
 
     Args:
-        question: The question text (in Hindi).
-        context: The passage providing context for the question.
+        prompt: The fully-formatted prompt string to send.
 
     Returns:
         The model's answer as a string.
@@ -83,13 +80,9 @@ def get_answer(question: str, context: str) -> str:
         RuntimeError: If GEMINI_API_KEY is not set.
         Exception: If the API call fails after all retries.
     """
-    # Step 1: Build the prompt using our shared template
-    prompt = build_prompt(question, context)
-
-    # Step 2: Get the client (creates it on first call)
     client = _get_client()
 
-    # Step 3: Call the API with retry logic
+    # Call the API with retry logic
     max_retries = 3
     for attempt in range(max_retries):
         try:

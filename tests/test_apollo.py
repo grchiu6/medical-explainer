@@ -10,6 +10,7 @@ import pytest
 import torch
 
 from models.apollo import get_answer
+from models.base import build_prompt
 
 
 @pytest.mark.skipif(
@@ -18,9 +19,10 @@ from models.apollo import get_answer
 )
 def test_get_answer_returns_nonempty_string():
     """Apollo should return a non-empty string for a Hindi medical question."""
-    answer = get_answer(
+    prompt = build_prompt(
         question="मधुमेह के लक्षण क्या हैं?",
-        context="मधुमेह एक चयापचय रोग है जिसमें रक्त शर्करा का स्तर बढ़ जाता है।"
+        context="मधुमेह एक चयापचय रोग है जिसमें रक्त शर्करा का स्तर बढ़ जाता है।",
     )
+    answer = get_answer(prompt)
     assert isinstance(answer, str), "Answer should be a string"
     assert len(answer) > 0, "Answer should not be empty"
