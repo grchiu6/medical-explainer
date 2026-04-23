@@ -40,8 +40,9 @@ _client = None
 _MODEL_NAME = "gemini-2.5-flash"
 
 # Delay between API calls in seconds.
-# Free tier = 15 requests/minute, so ~4 seconds between calls.
-_MIN_DELAY_SECONDS = 4.0
+# Free tier for gemini-2.5-flash = 5 requests/minute = 1 call per 12s.
+# 13s gives a small safety margin to absorb network jitter.
+_MIN_DELAY_SECONDS = 13.0
 
 
 def _get_client():
@@ -103,8 +104,9 @@ def get_answer(prompt: str) -> str:
 
         except Exception as e:
             if attempt < max_retries - 1:
-                # Exponential backoff: 2s, then 4s, then give up
-                wait = 2 ** (attempt + 1)
+                # Backoff: 30s, then 60s. Long enough to clear a typical
+                # rate-limit window (free tier is 5 RPM = 60s window).
+                wait = 30 * (attempt + 1)
                 print(f"Gemini API error: {e}. Retrying in {wait}s...")
                 time.sleep(wait)
             else:

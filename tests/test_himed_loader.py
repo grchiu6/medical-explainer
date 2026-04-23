@@ -167,3 +167,29 @@ def test_load_himed_missing_file_raises(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="not found"):
         load_himed(file_path=nonexistent)
+
+
+def test_load_himed_west_schema(tmp_path):
+    """West variant uses a separate 'options' dict instead of embedding them.
+
+    The loader should detect this and re-embed the options into the question
+    text so the model sees the choices when prompted.
+    """
+    mock_west_data = [{
+        "question_number": 1,
+        "question": "What does this gene do?",
+        "options": {"A": "alpha", "B": "beta", "C": "gamma", "D": "delta"},
+        "answer": "D",
+        "source": "GPQA-med",
+    }]
+    mock_file = tmp_path / "HiMed-West_Bench.json"
+    _write_mock_himed(mock_file, mock_west_data)
+
+    items = load_himed(file_path=mock_file)
+
+    assert len(items) == 1
+    q = items[0]["question"]
+    assert "What does this gene do?" in q, "Question stem should be present"
+    assert "A. alpha" in q, "Option A should be appended to question"
+    assert "D. delta" in q, "Option D should be appended to question"
+    assert items[0]["answer"] == "D"

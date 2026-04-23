@@ -82,15 +82,43 @@ def _resolve_path(variant: str | None, file_path: Path | None) -> Path:
     return path
 
 
+def _format_question(raw: dict) -> str:
+    """Build the question text with options visible to the model.
+
+    HiMed has TWO schemas:
+    - Trad: options are already embedded in the 'question' string
+            (e.g. 'Q?\\nA. ...\\nB. ...').
+    - West: options live in a separate 'options' dict
+            (e.g. {'A': '...', 'B': '...'}). The 'question' is just
+            the stem with no options.
+
+    We detect which case we're in and produce a single string that
+    always contains both the question and the options. This is what
+    the model sees in the MCQ prompt.
+    """
+    question = raw["question"].strip()
+    options = raw.get("options")
+
+    if not options:
+        # Trad-style: options already embedded — use as-is.
+        return question
+
+    # West-style: append 'A. ...\nB. ...' to the question stem.
+    options_text = "\n".join(
+        f"{letter}. {text}" for letter, text in sorted(options.items())
+    )
+    return f"{question}\n{options_text}"
+
+
 def _normalize_entry(raw: dict) -> dict:
     """Convert one raw HiMed entry into our standard dict shape.
 
-    We keep only the fields needed for evaluation. Stripping unused
-    fields keeps memory low for large datasets and makes the output
-    easier to inspect (less noise per row).
+    Handles both Trad and West HiMed schemas. Keeps only the fields
+    needed for evaluation; missing optional fields default to empty
+    strings so the dict shape is consistent across variants.
     """
     return {
-        "question": raw["question"].strip(),
+        "question": _format_question(raw),
         "answer": raw["answer"].strip().upper(),  # normalize 'a' → 'A'
         "subject": raw.get("subject", "").strip(),
         "system": raw.get("system", "").strip(),

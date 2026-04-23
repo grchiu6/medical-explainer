@@ -25,16 +25,14 @@ import argparse
 import csv
 from pathlib import Path
 
-import nltk
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from rouge_score import rouge_scorer
 
-# Download NLTK data that the BLEU function needs internally.
-# 'quiet=True' suppresses the download progress messages.
-# This only actually downloads on the first run — after that,
-# NLTK checks its cache and skips.
-nltk.download("punkt", quiet=True)
-nltk.download("punkt_tab", quiet=True)
+# NOTE: We deliberately do NOT call nltk.download() here. We tokenize
+# Hindi text ourselves (whitespace split) and pass pre-tokenized lists
+# to sentence_bleu, so NLTK's punkt models are never used. Downloading
+# them was unnecessary and broke on Python 3.14 + brewed Python (the
+# downloader requires xml.expat which isn't built into that interpreter).
 
 OUTPUTS_DIR = Path(__file__).parent / "outputs"
 
@@ -236,16 +234,22 @@ def score_model(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Score model outputs")
+    parser = argparse.ArgumentParser(description="Score IndicQA model outputs (BLEU + ROUGE-L)")
     parser.add_argument(
         "--model",
         required=True,
         choices=["gemini", "airavata", "apollo"],
         help="Which model's output to score",
     )
+    parser.add_argument(
+        "--dataset",
+        default="indicqa",
+        help="Which dataset's raw CSV to score (default: indicqa). "
+             "score.py is for extractive QA; use score_mcq.py for MCQ datasets.",
+    )
     args = parser.parse_args()
 
-    raw_path = OUTPUTS_DIR / f"{args.model}_raw.csv"
+    raw_path = OUTPUTS_DIR / f"{args.model}_{args.dataset}_raw.csv"
     if not raw_path.exists():
         print(f"Error: {raw_path} not found. Run evaluate.py first.")
         return
