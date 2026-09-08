@@ -93,6 +93,12 @@ def compute_metrics_for_file(file_path: Path, dataset: str) -> dict[str, float]:
     # become numbers (so '0.42' becomes a float, '1' becomes an int).
     df = pd.read_csv(file_path)
 
+    # Drop rows that were skipped during scoring (dataset errors with
+    # non-letter reference answers). The 'skipped' column only exists in
+    # MCQ scored CSVs; IndicQA scored CSVs won't have it.
+    if "skipped" in df.columns:
+        df = df[df["skipped"] != 1]
+
     # Build the result dict by walking the spec for this dataset.
     # df[col] gets that one column as a Series.
     # .mean() computes the average of all values in the Series.

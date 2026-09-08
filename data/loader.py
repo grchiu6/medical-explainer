@@ -11,6 +11,8 @@ Our output format (what the pipeline needs):
     [{"question": "...", "context": "...", "reference_answer": "..."}, ...]
 """
 
+from __future__ import annotations
+
 import json
 import random
 from pathlib import Path

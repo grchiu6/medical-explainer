@@ -21,6 +21,8 @@ Usage:
     python score.py --model apollo
 """
 
+from __future__ import annotations
+
 import argparse
 import csv
 from pathlib import Path
@@ -247,14 +249,25 @@ def main():
         help="Which dataset's raw CSV to score (default: indicqa). "
              "score.py is for extractive QA; use score_mcq.py for MCQ datasets.",
     )
+    parser.add_argument(
+        "--outputs-dir",
+        type=Path,
+        default=OUTPUTS_DIR,
+        help="Folder containing raw CSVs (and where scored CSVs will be saved). "
+             "Default: ./outputs/. Use this to point at a dated subfolder, "
+             "e.g. --outputs-dir outputs/9:4:2026",
+    )
     args = parser.parse_args()
 
-    raw_path = OUTPUTS_DIR / f"{args.model}_{args.dataset}_raw.csv"
+    outputs_dir = Path(args.outputs_dir)
+    raw_path = outputs_dir / f"{args.model}_{args.dataset}_raw.csv"
     if not raw_path.exists():
         print(f"Error: {raw_path} not found. Run evaluate.py first.")
         return
 
-    score_model(raw_path)
+    # scored CSV goes to the same folder, replacing any existing file
+    scored_path = outputs_dir / f"{args.model}_{args.dataset}_scored.csv"
+    score_model(raw_path, scored_path=scored_path)
 
 
 if __name__ == "__main__":

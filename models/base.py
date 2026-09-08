@@ -41,11 +41,52 @@ Answer:"""
 # "ONLY the letter" instruction makes the output trivial to parse.
 # Without it, models tend to output explanations like
 # "उत्तर A है क्योंकि..." which is harder to score reliably.
-_MCQ_PROMPT = """You are answering a multiple-choice medical question in Hindi. Read the question and the options carefully, then respond with ONLY the letter of the correct answer (A, B, C, D, or E). Do not explain. Do not write anything except the single letter.
+#
+# {letters} is filled in dynamically by build_mcq_prompt() based on
+# how many options the specific question has (A-C up to A-J).
+# This prevents misleading a 10-option question by saying "pick A-E".
+_MCQ_PROMPT = """You are answering a multiple-choice medical question in Hindi. Read the question and the options carefully, then respond with ONLY the letter of the correct answer ({letters}). Do not explain. Do not write anything except the single letter.
 
 Question: {question}
 
 Answer (single letter only):"""
+
+import re as _re
+
+# Matches option labels at the start of a line: "A. ", "B. ", ... "J. "
+_OPTION_LABEL_RE = _re.compile(r'^([A-J])\. ', _re.MULTILINE)
+
+
+def _last_option_letter(question: str) -> str:
+    """Return the last option letter present in a formatted question string.
+
+    Scans for patterns like "A. ", "B. ", ... "J. " at the start of any
+    line. The alphabetically largest letter found is the last option.
+
+    Used to build a prompt that accurately lists the valid choices:
+    a 3-option question gets "A, B, or C"; a 10-option question gets
+    "A, B, C, D, E, F, G, H, I, or J".
+
+    Returns:
+        A single uppercase letter 'A'-'J'. Defaults to 'E' if no option
+        labels are found (should not happen with well-formed data).
+    """
+    matches = _OPTION_LABEL_RE.findall(question)
+    return max(matches) if matches else "E"
+
+
+def _make_letter_list(last_letter: str) -> str:
+    """Build a human-readable letter list string for the MCQ prompt.
+
+    Examples:
+        'D' → 'A, B, C, or D'
+        'E' → 'A, B, C, D, or E'
+        'J' → 'A, B, C, D, E, F, G, H, I, or J'
+    """
+    letters = [chr(ord('A') + i) for i in range(ord(last_letter) - ord('A') + 1)]
+    if len(letters) == 1:
+        return letters[0]
+    return ", ".join(letters[:-1]) + f", or {letters[-1]}"
 
 
 def build_prompt(question: str, context: str) -> str:
@@ -78,13 +119,19 @@ def build_mcq_prompt(question: str) -> str:
 
     The question string is expected to already include the options inline,
     e.g. "Question?\\nA. ...\\nB. ...\\nC. ...\\nD. ...\\nE. ...".
-    The HiMed loader produces questions in this exact form, so callers
-    typically just forward the loader's "question" field directly.
+    The HiMed loader produces questions in this exact form.
+
+    The valid answer letters in the prompt are derived automatically
+    from the options present in the question string. So a 10-option
+    question will say "A, B, C, D, E, F, G, H, I, or J" rather than
+    the misleading "A, B, C, D, or E".
 
     Args:
-        question: Hindi question text with embedded A-E options.
+        question: Hindi question text with embedded A-J options.
 
     Returns:
         A formatted prompt string ready to send to any model.
     """
-    return _MCQ_PROMPT.format(question=question)
+    last = _last_option_letter(question)
+    letters = _make_letter_list(last)
+    return _MCQ_PROMPT.format(question=question, letters=letters)

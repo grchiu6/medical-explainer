@@ -26,6 +26,8 @@ to (loader_fn, prompt_builder_fn) tuples. This pattern scales cleanly:
 adding a new dataset = one line in the DATASETS dict, no if/elif to edit.
 """
 
+from __future__ import annotations
+
 import argparse
 import csv
 import importlib
