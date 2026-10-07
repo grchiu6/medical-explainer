@@ -17,3 +17,8 @@ venv/
 # macOS metadata
 .DS_Store
 logs/*
+venv-analysis/
+
+# Regenerable intermediate analysis files (rerun: python -m literacy_eval.analysis.clean / features)
+literacy_eval/analysis_outputs/clean.csv
+literacy_eval/analysis_outputs/features.csv
