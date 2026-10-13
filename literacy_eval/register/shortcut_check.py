@@ -17,7 +17,7 @@ accuracy on test.jsonl (balanced, 3 classes, so chance = 33%):
 
 Only numpy/pandas are used (scikit-learn can't be installed in this venv).
 
-    python -m literacy_eval.register.shortcut_check
+    python -m literacy_eval.register.shortcut_check [--corpus-dir data/register_corpus_9_10]
 """
 
 from __future__ import annotations
@@ -33,12 +33,11 @@ import numpy as np
 from literacy_eval.register.build_corpus import CORPUS_DIR, LABELS
 from literacy_eval.register.chunk import n_words, split_sentences
 
-REPORT_MD = CORPUS_DIR / "shortcut_report.md"
 TOP_WORDS = 25
 
 
-def load(split: str) -> list[dict]:
-    with (CORPUS_DIR / f"{split}.jsonl").open(encoding="utf-8") as f:
+def load(corpus_dir: Path, split: str) -> list[dict]:
+    with (corpus_dir / f"{split}.jsonl").open(encoding="utf-8") as f:
         return [json.loads(line) for line in f]
 
 
@@ -106,8 +105,10 @@ def confusion(pred: list[str], gold: list[str]) -> list[str]:
 
 
 def main() -> None:
-    argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()
-    train, test = load("train"), load("test")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--corpus-dir", type=Path, default=CORPUS_DIR)
+    corpus_dir = parser.parse_args().corpus_dir
+    train, test = load(corpus_dir, "train"), load(corpus_dir, "test")
     ytr, yte = [r["label"] for r in train], [r["label"] for r in test]
     lines = ["# Shortcut check", "", f"train = {len(train)} passages, test = {len(test)} passages, "
              "3 balanced classes (chance = 0.33).", ""]
@@ -132,10 +133,11 @@ def main() -> None:
     for label in LABELS:
         words = ", ".join(f"{w} ({c})" for w, _, c in nb.top_words(label, TOP_WORDS))
         lines += [f"**{label}:** {words}", ""]
-    REPORT_MD.write_text("\n".join(lines), encoding="utf-8")
+    report = corpus_dir / "shortcut_report.md"
+    report.write_text("\n".join(lines), encoding="utf-8")
     for name, (acc, _) in results.items():
         print(f"{name:16s} {acc:.3f}")
-    print(f"wrote {REPORT_MD}")
+    print(f"wrote {report}")
 
 
 if __name__ == "__main__":

@@ -109,3 +109,12 @@ def test_icmr_sentences_naming_publisher_or_people_dropped():
     text = "आई सी एम आर ने यह अध्ययन किया। डॉ. शर्मा ने बताया। " + ICMR_PROSE
     assert C.drop_icmr_source_sentences(text, drops) == ICMR_PROSE
     assert drops["sentence:icmr_source_marker"] == 2
+
+
+def test_sentence_final_imperative_before_danda_is_still_an_exercise():
+    # Regression: the danda is inside the Devanagari Unicode block, so "...कीजिए।" was not matched.
+    for sentence in ["जडों को धो लीजिए।", "स्लाइड को रखिए।", "कवरस्लिप को धीरे से दबाइए।",
+                     "सूक्ष्मदर्शी द्वारा स्लाइड का अवलोकन कीजिए।", "चित्रों को देखो।", "तुम्हें क्या लगा?"]:
+        assert C.is_exercise_sentence(sentence), sentence
+    assert not C.is_exercise_sentence("पौधों को बढ़ने के लिए पानी चाहिए।")
+    assert not C.is_exercise_sentence("इसलिए हमें जल बचाना चाहिए।")

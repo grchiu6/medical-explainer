@@ -47,6 +47,10 @@ EXCLUDED_FILE_SUFFIXES = ("ps", "an")
 # Class 10 Science (jhsc1): keep biology/health chapters only (topic control).
 # 5 जैव प्रक्रम, 6 नियंत्रण एवं समन्वय, 7 जीव जनन कैसे करते हैं, 8 आनुवंशिकता, 13 हमारा पर्यावरण
 JHSC1_KEEP = {"jhsc105", "jhsc106", "jhsc107", "jhsc108", "jhsc113"}
+# Class 9 Science (ihsc1, the 2025 "अन्वेषण" book; chapter titles read from the scanned first pages):
+# 2 कोशिका: जीवन की निर्माण इकाई, 3 क्रियाशील ऊतक, 11 जनन: जीवन की निरंतरता, 12 जीव जगत का स्वरूप.
+# Chapters 1, 4-10, 13 are physics, chemistry, earth science or the introduction.
+IHSC1_KEEP = {"ihsc102", "ihsc103", "ihsc111", "ihsc112"}
 
 _FURNITURE = re.compile(
     r"Chapter\s*\S{0,3}\.?\s*indd\s*\d*"          # "Chapter l.indd 5"
@@ -55,6 +59,10 @@ _FURNITURE = re.compile(
     r"|(?:Reprint|rePrint)\s*\d{4}-\d{2,4}",
     re.I,
 )
+# Characters that can be INSIDE a Devanagari word. The Devanagari block (U+0900-097F) also holds the danda
+# U+0964 and double danda U+0965, which END sentences; using the whole block as a word boundary made every
+# sentence-final word look like it continued, so "...कीजिए।" never matched.
+_W = "\u0900-\u0963\u0966-\u097F"
 _DEVANAGARI_LETTER = re.compile(r"[ऀ-ॣॱ-ॿ]")
 _LETTER = re.compile(r"[ऀ-ॣॱ-ॿA-Za-z]")
 _HINDI_WORD = re.compile(r"[ऀ-ॣॱ-ॿ]+")
@@ -71,14 +79,14 @@ _EXERCISE_VERB = re.compile(
     r"|भरि|भरो|मिलान|गतिविधि|क्रियाकलाप|प्रयोग करके देख|सोचि|सोचो|अनुमान लगा)"
 )
 _LETS_DO = re.compile(r"^\s*आइए")
-_READER_PRONOUN = re.compile(r"(?<![ऀ-ॿ])(?:तुम|तुम्हें|तुमने|तुमको|तुम्हारे|तुम्हारी|तुम्हारा|आप|आपको|आपके|आपकी|आपका|आपने)(?![ऀ-ॿ])")
+_READER_PRONOUN = re.compile(rf"(?<![{_W}])(?:तुम|तुम्हें|तुमने|तुमको|तुम्हारे|तुम्हारी|तुम्हारा|आप|आपको|आपके|आपकी|आपका|आपने)(?![{_W}])")
 # Commands to the student: polite "-इए/-िए" (देखिए, कीजिए, बनाइए) and familiar "-ओ" (देखो, लगाओ, करो).
 # Words that merely END in -िए but are not commands (लिए "for", चाहिए "should", किए/दिए past forms) are excluded.
-_POLITE_IMPERATIVE = re.compile(r"(?<![ऀ-ॿ])[ऀ-ॿ]+(?:िए|इए)(?![ऀ-ॿ])")
+_POLITE_IMPERATIVE = re.compile(rf"(?<![{_W}])[{_W}]+(?:िए|इए)(?![{_W}])")
 _NOT_IMPERATIVE = {"लिए", "इसलिए", "किसलिए", "जिसलिए", "उसलिए", "चाहिए", "किए", "दिए", "पिए", "जिए", "सिए", "छुए"}
 _FAMILIAR_IMPERATIVE = re.compile(
-    r"(?<![ऀ-ॿ])(?:देखो|करो|लगाओ|बनाओ|लिखो|बताओ|सोचो|पूछो|खोजो|ढूँढो|ढूंढो|गिनो|चखो|सूँघो|छुओ|खेलो"
-    r"|सुनो|पढ़ो|पढो|बोलो|भरो|जोड़ो|जोडो|मिलाओ|रखो|लाओ|दिखाओ|समझाओ|पहचानो)(?![ऀ-ॿ])"
+    rf"(?<![{_W}])(?:देखो|करो|लगाओ|बनाओ|लिखो|बताओ|सोचो|पूछो|खोजो|ढूँढो|ढूंढो|गिनो|चखो|सूँघो|छुओ|खेलो"
+    rf"|सुनो|पढ़ो|पढो|बोलो|भरो|जोड़ो|जोडो|मिलाओ|रखो|लाओ|दिखाओ|समझाओ|पहचानो)(?![{_W}])"
 )
 _EXERCISE_HEADING = re.compile(r"^\s*(?:प्रश्न|अभ्यास|क्रियाकलाप|चित्र\s*\d|सारणी)")
 
@@ -93,7 +101,7 @@ _ICMR_EVENT = re.compile(r"बैठक|सम्मेलन|संगोष्
 MIN_EVENT_HITS = 3
 # Sentences that name the publisher or a person: source markers, not register (found by shortcut_check).
 _ICMR_SOURCE_SENTENCE = re.compile(
-    r"आई\s*सी\s*एम\s*आर|आईसीएमआर|आयुर्विज्ञान अनुसंधान परिषद|परिषद|(?<![ऀ-ॿ])(?:डॉ|डा)\.?(?![ऀ-ॿ])"
+    rf"आई\s*सी\s*एम\s*आर|आईसीएमआर|आयुर्विज्ञान अनुसंधान परिषद|परिषद|(?<![{_W}])(?:डॉ|डा)\.?(?![{_W}])"
     r"|महानिदेशक|सचिव"
 )
 _ICMR_AUTHOR_LINE = re.compile(r"(?:डॉ|डा)\.?\s|वैज्ञानिक\s*['\"]?[ई-ह]|संस्थान,|परिषद,|नई दिल्ली\s*$")
@@ -186,7 +194,11 @@ def keep_file(source: str, file: str) -> bool:
         return True
     if stem.endswith(EXCLUDED_FILE_SUFFIXES):
         return False
-    return not stem.startswith("jhsc1") or stem in JHSC1_KEEP
+    if stem.startswith("jhsc1"):
+        return stem in JHSC1_KEEP
+    if stem.startswith("ihsc1"):
+        return stem in IHSC1_KEEP
+    return True
 
 
 def clean_page(source: str, paragraphs: list[Paragraph], drops: DropCounter) -> list[str]:

@@ -7,6 +7,8 @@ and can be downloaded again):
       ehev1  Class 5  हमारा अद्भुत संसार (new edition)     -> 5th grade
       ehap1  Class 5  आस-पास (old edition)                -> 5th grade
       jhsc1  Class 10 विज्ञान                             -> 10th grade
+      ihsc1  Class 9  विज्ञान (अन्वेषण)                    -> "grade9" (optional extra for 10th grade;
+                                                              build_corpus --variant class9_10 merges it)
   - every ICMR Patrika issue linked from the ICMR archive page -> professional
   - Tesseract's best Hindi model (tessdata_best/hin.traineddata)
 Then writes data/register_raw/manifest.csv: one row per PDF with
@@ -42,6 +44,7 @@ NCERT_BOOKS = {          # code -> label
     "ehev1": "grade5",
     "ehap1": "grade5",
     "jhsc1": "grade10",
+    "ihsc1": "grade9",
 }
 NCERT_ZIP_URL = "https://ncert.nic.in/textbook/pdf/{code}dd.zip"
 ICMR_ARCHIVE_URL = "https://www.icmr.gov.in/hindi-publication-icmr-patrika"

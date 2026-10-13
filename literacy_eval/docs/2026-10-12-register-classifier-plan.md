@@ -30,27 +30,35 @@ Hindi-reading annotator.
 
 If a model adapts, its `low` answers should be classified as 5th grade, `mid` as 10th, and `high` as professional.
 
-## Status (2026-10-12)
+## Status (2026-10-13)
 
 | Stage | Status | Result |
 |---|---|---|
-| Download (`sources`) | ✅ done | 49 NCERT chapter PDFs, 115 ICMR issues; 1,911 pages |
-| OCR (`ocr`) | ✅ done | 1,911 / 1,911 pages, 0 failures (~1.5 h on the Mac) |
-| Clean + normalize + chunk (`build_corpus`) | ✅ done | **237 passages per class** (balanced): train 489 / val 111 / test 111 |
-| Shortcut check | ✅ done | length-only 0.34 (≈ chance ✓), sentence-length 0.57, word naive Bayes 0.91 (top words now real language) |
+| Download (`sources`) | ✅ done | 64 NCERT chapter PDFs (Class 5, 9, 10) and 115 ICMR issues; 2,207 pages |
+| OCR (`ocr`) | ✅ done | 2,207 / 2,207 pages, 0 failures (~2 h on the Mac) |
+| Clean + normalize + chunk (`build_corpus`) | ✅ done, **2 variants** | **A `class10`: 237 passages per class** (train 153 / val 39 / test 45). **B `class9_10`: 353 per class** (train 222 / val 74 / test 57) |
+| Shortcut check | ✅ done | A: length-only 0.39, sentence-length 0.62, word naive Bayes 0.99. B: 0.39 / 0.62 / 0.98. Top words are language, not source markers |
 | LLM outputs (`prepare_outputs`) | ✅ done | 509 usable responses → 650 windows (usable counts match `results.md`) |
-| Fine-tuning (`train`) | ⏳ ready, **needs you on PACE** | code smoke-tested locally with a tiny model |
+| Fine-tuning (`train`) | ⏳ ready, **needs you on PACE** | 4 jobs: 2 encoders × 2 corpus variants (commands in section 7). Code smoke-tested locally with a tiny model; script writes only to scratch |
 | Outside validation sets | ⏳ to do | ReadMe++ (needs your download), COIL-D, MIRACL medical |
 
-**Bottleneck:** Class 10 has only 237 passages (5 biology chapters), and it sets the size of every class. Option, not yet
-decided: add the biology chapters of NCERT Class 9 विज्ञान and call the class "grades 9–10" (action item 1 in section 7).
+**Two corpus variants, because the smallest class sets every class's size** (classes are kept equal-sized to avoid bias):
+
+| | A `class10` | B `class9_10` |
+|---|---|---|
+| "10th grade" text | NCERT Class 10 biology (5 chapters) | Class 10 biology + **Class 9 biology** (`ihsc1` chapters 2 cell, 3 tissues, 11 reproduction, 12 diversity of living things) |
+| Smallest class | Class 10: 237 passages | Class 5: 353 passages |
+| Passages per class (train / val / test) | 237 (153 / 39 / 45) | 353 (222 / 74 / 57) |
+| Trade-off | purest grade label, little data | +49% data, but the class spans two grades |
+
+We train on both and compare (section 7). Directories: `data/register_corpus/` (A) and `data/register_corpus_9_10/` (B).
 
 ## 2. Decisions at a glance
 
 | Topic | Decision | Why |
 |---|---|---|
 | 5th-grade text | NCERT Class 5 environmental-studies books, both editions: `ehev1` हमारा अद्भुत संसार (new) and `ehap1` आस-पास (old) | Real 5th-grade Hindi covering food, water, the body and illness. Class 5 is the smallest class, so both editions are used. |
-| 10th-grade text | NCERT Class 10 विज्ञान (Science) `jhsc1`, **biology/health chapters only** | Real 10th-grade Hindi. Chemistry and physics chapters would make "10th grade" partly mean "chemistry". |
+| 10th-grade text | NCERT Class 10 विज्ञान (Science) `jhsc1`, **biology/health chapters only**. Variant B adds Class 9 `ihsc1` biology chapters | Real 10th-grade Hindi. Chemistry and physics chapters would make "10th grade" partly mean "chemistry". |
 | Professional text | **ICMR Patrika**, the Hindi periodical of the Indian Council of Medical Research: 115 issues, 2007 to ~2025, 1,239 pages | The only free, verified source of medical Hindi written by researchers (see appendix for the search). |
 | Text extraction | **OCR every page the same way** (Tesseract `tessdata_best`, `hin+eng`, 300 dpi), even where a PDF has text | ICMR PDFs have no usable text, so they must be OCR'd. OCR'ing only ICMR would make "has OCR errors" a cue for "professional". |
 | Normalization | **One shared `normalize()`** for training text **and** LLM outputs | Any formatting difference between sources is a shortcut the classifier could learn instead of register (section 4.4). |
@@ -128,9 +136,15 @@ This stage only **removes** material. It never rewrites the language of what rem
 | ICMR | **Event-report pages:** 3 or more of `बैठक, सम्मेलन, संगोष्ठी, कार्यशाला, उद्घाटन, मुख्य अतिथि, अध्यक्षता, स्वागत, धन्यवाद ज्ञापन`. Deliberately *not* `सम्पन्न`/`आयोजित`, because research text says "अध्ययन सम्पन्न किया गया" ("the study was conducted") | Speeches, meetings, conference listings (spot-checked: 464 pages) |
 | ICMR | **Sentences naming the publisher or a person:** `आई सी एम आर`, `परिषद`, `डॉ`, `महानिदेशक`, `सचिव` | Source markers. Found by the shortcut check: before this rule, ICMR's spelled-out name was among the top "professional" words |
 
+**Bug found and fixed (2026-10-13):** the imperative rules used the whole Devanagari Unicode block as a "word
+boundary", but that block includes the danda `।`. So a command at the end of a sentence ("…धो लीजिए।", the most common
+place) never matched and survived as training text. Fixed with a boundary class that excludes `।` and `॥`, plus a
+regression test. Exercise-sentence drops rose from 990 to 1,191 (variant A) and 1,628 (variant B, which adds Class 9
+lab procedures). All counts and numbers in this document are from after the fix.
+
 Every rule records how many lines it dropped, and these counts appear in the corpus report so we can check that no
-rule removes too much. Current counts: 990 exercise sentences, 1,852 ICMR source-marker sentences, 464 event pages,
-95 teacher pages, 1,937 low-confidence paragraphs, 3,337 short paragraphs.
+rule removes too much. Current counts (variant A): 1,191 exercise sentences, 1,852 ICMR source-marker sentences, 464 event pages,
+95 teacher pages.
 
 ### 4.4 `normalize`: the shared normalizer
 One function, `normalize(text)`, used on **every** training passage **and every** LLM output. Each rule removes a
@@ -166,20 +180,22 @@ Tested in `tests/test_register_normalize.py` with real OCR and LLM strings; `nor
    chapter would leave a single chapter, and a single topic, as the test set. The cost is that one chapter's blocks
    can sit in different splits, which leaks a little shared vocabulary.
 
-**Current corpus:**
+**Current corpus** (before balancing; `corpus_report.md` has the full tables):
 
-| | passages before balancing | groups | median words | mean words per sentence | numbers (share of words) |
+| class | passages (A / B) | groups (A / B) | median words | mean words per sentence | numbers (share of words) |
 |---|---|---|---|---|---|
-| grade5 | 370 | 31 | 73 | 14.3 | 0.6% |
-| grade10 | 237 | 19 | 84 | 17.8 | 0.5% |
-| professional | 3,286 | 115 | — | ~26 | ~2.3% |
+| grade5 | 353 / 353 | 31 / 31 | 77 | 14.4 | 0.8% |
+| grade10 | 237 / 511 | 19 / 40 | 65 / 77 | 17.6 / 18.1 | 0.5% / 1.1% |
+| professional | 3,309 / 3,295 | 115 / 115 | 92 / 96 | 26.3 / 26.5 | 2.3% |
 
-After balancing: 237 per class. Passage-length distributions match across classes (medians 72–84 words). Words per
-sentence rise from 14 → 18 → 26, the expected register signal.
+After balancing: A has 237 passages per class, B has 353. Words per sentence rise from 14 → 18 → 26, the expected
+register signal. **Known small residual:** after balancing, ICMR passages come out a little longer than the others
+(B: median 112 words vs 77 for Class 5), because ICMR's long sentences overshoot the length targets. The
+length-only baseline (4.7) picks this up weakly (0.39, chance 0.33).
 
 ### 4.6 `build_corpus`: run 4.3–4.5 and report
-Writes `data/register_corpus/{train,val,test}.jsonl` (fields: `text`, `label`, `source`, `group`) and
-`data/register_corpus/corpus_report.md`, which contains:
+`--variant class10` (default) writes `data/register_corpus/`; `--variant class9_10` writes `data/register_corpus_9_10/`.
+Each gets `{train,val,test}.jsonl` (fields: `text`, `label`, `source`, `group`) and `corpus_report.md`, which contains:
 - counts per class at each stage
 - passage-length histograms per class (they should look the same)
 - per-rule drop counts
@@ -194,11 +210,13 @@ If either is near-perfect, a leftover artifact (for example a masthead string) i
 cleaning before spending GPU time. (Implemented with numpy only, because `pip` is broken in `venv`: Homebrew Python
 3.14's `pyexpat` can't load the system `libexpat`.)
 
-| Classifier | Test accuracy (chance 0.33) | Reading |
-|---|---|---|
-| Passage length only | 0.34 | ✓ length matching works |
-| Mean sentence length only | 0.57 | the simple baseline BERT must clearly beat; mostly confuses 5th with 10th |
-| Word naive Bayes | 0.91 | vocabulary differs by class, as expected. Top words are now language (`स्वास्थ्य, व्यापकता, रोगवाहक` / `कोशिका, जनन, रुधिर` / `मैं, जमीन, गाँव`) |
+| Classifier | A `class10` | B `class9_10` | Reading (chance = 0.33) |
+|---|---|---|---|
+| Passage length only | 0.39 | 0.39 | Close to chance, weak leftover length difference (see 4.5). It never predicts grade10, so it acts as a 2-way split |
+| Mean sentence length only | 0.62 | 0.62 | The simple baseline BERT must clearly beat |
+| Word naive Bayes | 0.99 | 0.98 | Vocabulary differs by class. Top words are language: `स्वास्थ्य, व्यापकता, रोगवाहक` / `कोशिका, ऊतक, जनन` / `मैं, घर, गाँव, पानी` |
+
+Test sets are small (135 and 171 passages), so differences of a few points are noise.
 
 **Caution:** the word baseline is high partly because of **topic**: Class 10 = biology, ICMR = public health,
 Class 5 = everyday life and environment. BERT will exploit that too. Only the outside test sets (section 5) can show
@@ -250,44 +268,73 @@ For each model:
 ### For you (Grace)
 | # | Task | Where | Why |
 |---|---|---|---|
-| 1 | Decide: keep "10th grade" = Class 10 biology only (237 passages per class), or add NCERT Class 9 biology chapters as "grades 9–10" (more data, slightly wider class) | — | Class 10 limits the size of every class |
-| 2 | Run the training job (steps below) | Mac + PACE | GPU fine-tuning |
-| 3 | `git clone https://github.com/tareknaous/readme` and check that the Hindi data is included and what the license is | anywhere | Validation against human difficulty ratings (section 5) |
-| 4 | *(Optional)* Ask a Hindi reader to skim the 10 sample passages per class in `data/register_corpus/corpus_report.md` | — | Catches cleaning mistakes the rules miss |
+| 1 | Run the 4 training jobs (steps below): 2 encoders × 2 corpus variants | Mac + PACE | Compares MuRIL vs IndicBERTv2, and "Class 10 only" vs "Class 9 + 10" |
+| 2 | `git clone https://github.com/tareknaous/readme` and check that the Hindi data is included and what the license is | anywhere | Validation against human difficulty ratings (section 5) |
+| 3 | *(Optional)* Ask a Hindi reader to skim the 10 sample passages per class in `data/register_corpus*/corpus_report.md` | — | Catches cleaning mistakes the rules miss |
 
-**Running the training job:**
+**Everything on PACE goes to scratch** (`/home/hice1/gchiu6/scratch`, the only place with space). The SLURM script sets
+`HF_HOME`, `TORCH_HOME`, `XDG_CACHE_HOME`, `TRITON_CACHE_DIR`, `PIP_CACHE_DIR` and `TMPDIR` there, and writes logs and
+results there. The one thing it can't cover is your own login-node commands, which is why step 1 sets `HF_HOME` first.
+
+**Running the training jobs:**
 ```bash
-# 1. On PACE (once): make the folder; check the encoders download without access approval
-mkdir -p ~/scratch/register_corpus
+# 1. On PACE, once. Set HF_HOME FIRST (otherwise the download fills your home directory).
+export HF_HOME=/home/hice1/gchiu6/scratch/hf_cache
+mkdir -p ~/scratch/{logs,hf_cache,register_corpus,register_corpus_9_10,register_eval,register_runs}
 huggingface-cli download google/muril-base-cased
 huggingface-cli download ai4bharat/IndicBERTv2-MLM-only
+#   -> if either asks for access/login, tell me which one.
 
-# 2. On the Mac, from the repo root: copy the corpus up
-scp data/register_corpus/{train,val,test,llm_windows}.jsonl \
-    gchiu6@login-ice.pace.gatech.edu:/home/hice1/gchiu6/scratch/register_corpus/
+# 2. On the Mac, from the repo root: copy both corpora up. This uses plain ssh + tar, so it works even
+#    when scp doesn't. (llm_windows.jsonl is shared, so it is copied into both folders on PACE.)
+H=gchiu6@login-ice.pace.gatech.edu
+(cd data && COPYFILE_DISABLE=1 tar czf - register_corpus/{train,val,test,llm_windows}.jsonl \
+                                          register_corpus_9_10/{train,val,test}.jsonl) \
+  | ssh $H 'tar xzf - -C ~/scratch && cp ~/scratch/register_corpus/llm_windows.jsonl ~/scratch/register_corpus_9_10/'
+ssh $H 'ls ~/scratch/register_corpus ~/scratch/register_corpus_9_10'      # check: 4 files in each
+#   (optional, when you have it) ssh $H 'cat > ~/scratch/register_eval/readmepp_hi.jsonl' < readmepp_hi.jsonl
 
-# 3. On PACE, in the repo (after committing + git pull, so literacy_eval/register/ is there):
-sbatch scripts/register_train.sh muril
-sbatch scripts/register_train.sh indicbert
+# 3. On PACE, in the repo, once the new code is there (git pull):
+sbatch --job-name=reg-muril-c10   scripts/register_train.sh muril     register_corpus
+sbatch --job-name=reg-indic-c10   scripts/register_train.sh indicbert register_corpus
+sbatch --job-name=reg-muril-c910  scripts/register_train.sh muril     register_corpus_9_10
+sbatch --job-name=reg-indic-c910  scripts/register_train.sh indicbert register_corpus_9_10
+squeue -u gchiu6                                   # watch them; logs: ~/scratch/logs/register-<jobname>-<id>.out
 
-# 4. When both finish: send me metrics.json for each, and copy back the scores
-scp gchiu6@login-ice.pace.gatech.edu:/home/hice1/gchiu6/scratch/register_runs/*/{metrics.json,llm_window_scores.jsonl} .
+# 4. When all four finish (a few minutes each), on the Mac: copy results back, WITHOUT the ~1 GB weight files
+ssh $H 'cd ~/scratch && tar czf - --exclude=best.pt register_runs' | tar xzf - -C .      # -> ./register_runs/
 ```
-GPU: the script asks for `l40s`. If those are busy, change `--gres=gpu:l40s:1` to `a40`, `a100` or `h100`. **Never
-`mi210`** (AMD).
+
+### If `scp` / `rsync` fail
+
+The commands above avoid them. If `ssh` itself works, so do these. Notes:
+- Your Mac has OpenSSH 10, whose `scp` uses the SFTP protocol by default. If PACE's login node doesn't offer SFTP,
+  `scp` fails but `scp -O ...` (the older protocol) often works. This is a guess, not confirmed; the error message
+  would tell us.
+- If each new `ssh` asks for a password or Duo approval, reuse one login for all the commands by adding
+  `-o ControlMaster=auto -o ControlPath=~/.ssh/cm-%r@%h:%p -o ControlPersist=15m` to your first `ssh`.
+- Another route is the PACE web portal (Open OnDemand), which has a file-upload page, if your account has it.
+
+The `best.pt` weight files (~1 GB each) stay on PACE; delete them from scratch when you're done. When step 4 is done,
+send me `register_runs/*/*/metrics.json` and the `llm_window_scores.jsonl` files (or just tell me they're in
+`register_runs/`).
+
+GPU: the script asks for `l40s`. If those are busy, change `--gres=gpu:l40s:1` in the script to `a40`, `a100` or `h100`.
+**Never `mi210`** (AMD).
 
 ### For Claude
 - Done: `sources`, `ocr`, `normalize`, `clean_sources`, `chunk`, `build_corpus`, `shortcut_check`,
-  `prepare_outputs`, `train.py`, `scripts/register_train.sh`, and 43 unit tests (`tests/test_register_*.py`).
+  `prepare_outputs`, `train.py`, `scripts/register_train.sh`, and 44 unit tests (`tests/test_register_*.py`).
 - Next: prepare the outside validation sets (COIL-D Health, MIRACL medical passages, ReadMe++ once downloaded), then
   analyse the scores (section 6).
 
 **Rebuilding locally** (from the repo root, with `venv`):
 ```bash
 python -m literacy_eval.register.sources          # download (skips existing files)
-python -m literacy_eval.register.ocr --workers 10 # ~1.5 h, resumable
-python -m literacy_eval.register.build_corpus     # -> data/register_corpus/*.jsonl + corpus_report.md
-python -m literacy_eval.register.shortcut_check   # -> shortcut_report.md
+python -m literacy_eval.register.ocr --workers 10 # ~2 h, resumable
+python -m literacy_eval.register.build_corpus --variant class10     # -> data/register_corpus/
+python -m literacy_eval.register.build_corpus --variant class9_10   # -> data/register_corpus_9_10/
+python -m literacy_eval.register.shortcut_check [--corpus-dir data/register_corpus_9_10]
 python -m literacy_eval.register.prepare_outputs  # -> llm_responses.csv + llm_windows.jsonl
 python -m pytest tests/test_register_*.py
 ```
@@ -339,3 +386,7 @@ python -m pytest tests/test_register_*.py
   layers found broken, so everything is OCR'd. Shared normalizer, length matching and group splits adopted.
   Pipeline built; full OCR run; corpus built. The shortcut check found ICMR source markers (its own name, `डॉ`,
   meeting reports), and these were removed. Class 10 split by 4-page blocks.
+- **2026-10-13:** Class 9 biology added as corpus variant B (`class9_10`) so we can compare. Chapters were identified by
+  OCR of each chapter's first page, because the 2025 book renumbered everything. Found and fixed the danda word-boundary
+  bug in the imperative filter (section 4.3). SLURM script rewritten so every cache, temp file, log and result is on
+  scratch, and to take `<encoder> <corpus>`.
