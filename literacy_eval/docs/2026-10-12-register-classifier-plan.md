@@ -39,7 +39,7 @@ If a model adapts, its `low` answers should be classified as 5th grade, `mid` as
 | Clean + normalize + chunk (`build_corpus`) | ✅ done, **2 variants** | **A `class10`: 237 passages per class** (train 153 / val 39 / test 45). **B `class9_10`: 353 per class** (train 222 / val 74 / test 57) |
 | Shortcut check | ✅ done | A: length-only 0.39, sentence-length 0.62, word naive Bayes 0.99. B: 0.39 / 0.62 / 0.98. Top words are language, not source markers |
 | LLM outputs (`prepare_outputs`) | ✅ done | 509 usable responses → 650 windows (usable counts match `results.md`) |
-| Fine-tuning (`train`) | ⏳ ready, **needs you on PACE** | 4 jobs: 2 encoders × 2 corpus variants (commands in section 7). Code smoke-tested locally with a tiny model; script writes only to scratch |
+| Fine-tuning (`train`) | ⚠️ **run 1 done, found a bug; rerun needed** | Run 1 (4 jobs) never predicted the middle class: threshold bug in my code, fixed (section 4.10). Rerun the same 4 `sbatch` commands after `git pull` |
 | Outside validation sets | ⏳ to do | ReadMe++ (needs your download), COIL-D, MIRACL medical |
 
 **Two corpus variants, because the smallest class sets every class's size** (classes are kept equal-sized to avoid bias):
@@ -237,10 +237,38 @@ Outputs: `data/register_corpus/llm_responses.csv` (all 900, with `usable_rules`,
 - **Ordinal head (CORAL):** the encoder produces one score `s` per passage; two learned, ordered thresholds give
   `P(level > 5th)` and `P(level > 10th)`. The loss is binary cross-entropy on those two questions, so calling a 10th-grade
   passage "professional" costs less than calling it "5th grade". `expected_level = P(>5th) + P(>10th)` runs from 0 to 2.
-- **Settings:** 5 epochs, batch 16, learning rate 2e-5, max 320 tokens. The best epoch is chosen by val macro-F1.
+- **Settings:** 5 epochs, batch 16, max 320 tokens. Two learning rates: **2e-5 for the pretrained encoder** and
+  **1e-3 for the new score layer and the two thresholds** (`--head-lr`), which start from scratch and must move far.
+  The thresholds start 3.0 apart (at -1.5 and +1.5). The best epoch is chosen by val macro-F1.
 - **Outputs** (`~/scratch/register_runs/<encoder>_seed42/`): `metrics.json`, `test_scores.jsonl`,
   `llm_window_scores.jsonl` (bring this back to the Mac), and `best.pt`.
 - Tested: `tests/test_register_train.py` (ordinal maths) and a local end-to-end smoke run with a tiny model.
+
+### 4.10 Reading the training outputs, and what run 1 showed
+
+Each run writes three files to `register_runs/<corpus>/<encoder>_seed42/`:
+
+| File | What it holds | How to read it |
+|---|---|---|
+| `metrics.json` | `history`: one row per **epoch** (one pass over the training data) with the training `loss` and the validation accuracy / macro-F1. `test`: the final score on held-out data, plus `confusion_gold_x_pred` | **Loss** is the training error; it should fall. **val** numbers show whether the model works on data it didn't train on; they should rise, then flatten. If loss falls but val doesn't rise, the model is memorising (overfitting). The **confusion matrix** has one row per true class and one column per predicted class; the diagonal is correct. |
+| `test_scores.jsonl` | one row per held-out passage: `p_grade5/p_grade10/p_professional` (probabilities summing to 1), `expected_level` (0 = 5th, 2 = professional), `predicted` | Look at the *average* `expected_level` per true class: a healthy model gives ≈0 / ≈1 / ≈2. |
+| `llm_window_scores.jsonl` | the same scores for the LLM answers (usable ones, in windows) | The thing we actually care about. Average `expected_level` per model × requested level should rise from `low` to `high` if the model adapts. |
+
+**Metrics.** *Accuracy* = share correct. *Macro-F1* averages the per-class F1 scores, so a class that is never predicted
+drags it down (chance for 3 balanced classes: accuracy 0.33).
+
+**Run 1 (2026-10-13), and why it was a bug in our code, not a finding.** All four runs scored accuracy ≈0.66 with the
+confusion matrix's middle column all zeros: 10th grade was *never* predicted. Two checks showed why:
+- The highest `p_grade10` any passage ever got was exactly **0.245** in all four runs.
+- With the ordinal thresholds a gap `g` apart, the best a passage can score for the middle class is
+  `sigmoid(g/2) − sigmoid(−g/2)`. That is 0.245 at g = 1 (where I initialised them) and exceeds the 1/3 needed to win only
+  when g > 1.39. The thresholds were trained at the encoder's tiny 2e-5, so they never left g = 1.
+
+So the middle class was *structurally unable* to win. Evidence the rest worked: IndicBERT's average `expected_level`
+was 0.06 / 0.98 / 1.94 for the three true classes, a clean ordering. MuRIL, in contrast, barely learned (training loss
+nearly flat, near-identical scores for every passage); it needs the rerun with the fixed learning rates before judging.
+**Fix:** a separate larger learning rate for the head and thresholds, initial gap 3.0, two regression tests, and a
+synthetic end-to-end check (middle class now predicted, 100% on an easy 3-class toy set). Rerun all four jobs.
 
 ## 5. Validation
 

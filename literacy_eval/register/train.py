@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import time
 from pathlib import Path
@@ -43,6 +44,7 @@ ENCODERS = {
 }
 LABELS = ["grade5", "grade10", "professional"]   # ordered
 LABEL_ID = {label: i for i, label in enumerate(LABELS)}
+INIT_GAP = 3.0   # initial distance between the two ordinal thresholds (see OrdinalClassifier)
 
 
 def load_jsonl(path: Path) -> list[dict]:
@@ -58,15 +60,32 @@ class OrdinalClassifier(nn.Module):
         self.encoder = AutoModel.from_pretrained(encoder_name)
         self.dropout = nn.Dropout(0.1)
         self.score = nn.Linear(self.encoder.config.hidden_size, 1)
-        # b1 = first threshold; gap is kept positive so b2 > b1 always
-        self.b1 = nn.Parameter(torch.tensor(-0.5))
-        self.log_gap = nn.Parameter(torch.tensor(0.0))
+        # b1 = first threshold; gap is kept positive so b2 > b1 always.
+        # The gap must start WIDE: with gap g, the best P(10th grade) any passage can get is
+        # sigmoid(g/2) - sigmoid(-g/2), which is only 0.245 for g = 1 (never the winning class) and
+        # needs g > 1.39 to exceed 1/3. Start at -1.5 and +1.5 (gap 3, best possible 0.635).
+        self.b1 = nn.Parameter(torch.tensor(-INIT_GAP / 2))
+        self.log_gap = nn.Parameter(torch.tensor(math.log(INIT_GAP)))
 
     def forward(self, input_ids, attention_mask):
         hidden = self.encoder(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state[:, 0]
         s = self.score(self.dropout(hidden)).squeeze(-1)
         thresholds = torch.stack([self.b1, self.b1 + torch.exp(self.log_gap)])
         return s.unsqueeze(-1) - thresholds          # logits of P(y > k), k = 0, 1
+
+
+def build_optimizer(model: OrdinalClassifier, lr: float, head_lr: float) -> torch.optim.Optimizer:
+    """AdamW with two learning rates: `lr` (small) for the pretrained encoder, `head_lr` (much larger) for the
+    new score layer and the two thresholds. Those start from scratch and must be able to move far; at the
+    encoder's 2e-5 they barely moved in the first training run (the thresholds stayed put, so the middle
+    class could never be predicted). Thresholds get no weight decay (it would pull them together)."""
+    head = [model.score.weight, model.score.bias]
+    thresholds = [model.b1, model.log_gap]
+    return torch.optim.AdamW([
+        {"params": model.encoder.parameters(), "lr": lr, "weight_decay": 0.01},
+        {"params": head, "lr": head_lr, "weight_decay": 0.01},
+        {"params": thresholds, "lr": head_lr, "weight_decay": 0.0},
+    ])
 
 
 def ordinal_targets(y: torch.Tensor) -> torch.Tensor:
@@ -140,7 +159,8 @@ def main() -> None:
     parser.add_argument("--extra-score", type=Path, nargs="*", default=[], help="more jsonl files to score")
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--lr", type=float, default=2e-5, help="learning rate for the pretrained encoder")
+    parser.add_argument("--head-lr", type=float, default=1e-3, help="learning rate for the new score layer + thresholds")
     parser.add_argument("--max-len", type=int, default=320)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -154,7 +174,7 @@ def main() -> None:
     print(f"train {len(train)}  val {len(val)}  test {len(test)}  device {device}")
     tokenizer = AutoTokenizer.from_pretrained(ENCODERS[args.encoder])
     model = OrdinalClassifier(ENCODERS[args.encoder]).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    optimizer = build_optimizer(model, args.lr, args.head_lr)
     steps = args.epochs * ((len(train) + args.batch_size - 1) // args.batch_size)
     scheduler = get_linear_schedule_with_warmup(optimizer, int(0.1 * steps), steps)
     loss_fn = nn.BCEWithLogitsLoss()
