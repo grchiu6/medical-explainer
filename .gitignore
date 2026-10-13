@@ -22,3 +22,7 @@ venv-analysis/
 # Regenerable intermediate analysis files (rerun: python -m literacy_eval.analysis.clean / features)
 literacy_eval/analysis_outputs/clean.csv
 literacy_eval/analysis_outputs/features.csv
+
+# Register corpus: copyrighted source PDFs/OCR (re-downloadable: python -m literacy_eval.register.sources) and built corpus
+data/register_raw/
+data/register_corpus/
