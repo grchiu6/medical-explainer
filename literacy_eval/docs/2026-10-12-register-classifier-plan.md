@@ -39,8 +39,9 @@ If a model adapts, its `low` answers should be classified as 5th grade, `mid` as
 | Clean + normalize + chunk (`build_corpus`) | ✅ done, **2 variants** | **A `class10`: 237 passages per class** (train 153 / val 39 / test 45). **B `class9_10`: 353 per class** (train 222 / val 74 / test 57) |
 | Shortcut check | ✅ done | A: length-only 0.39, sentence-length 0.62, word naive Bayes 0.99. B: 0.39 / 0.62 / 0.98. Top words are language, not source markers |
 | LLM outputs (`prepare_outputs`) | ✅ done | 509 usable responses → 650 windows (usable counts match `results.md`) |
-| Fine-tuning (`train`) | ⚠️ **run 1 done, found a bug; rerun needed** | Run 1 (4 jobs) never predicted the middle class: threshold bug in my code, fixed (section 4.10). Rerun the same 4 `sbatch` commands after `git pull` |
-| Outside validation sets | ⏳ to do | ReadMe++ (needs your download), COIL-D, MIRACL medical |
+| Fine-tuning (`train`) | ✅ **run 2 done** | Run 1 had a threshold bug (section 4.10). Run 2: IndicBERT 0.985 (Class 10 corpus) / 0.936 (Class 9+10), MuRIL 0.953 (Class 9+10), MuRIL on Class 10 **failed** (stuck at chance). **IndicBERT on the Class 10 corpus is the primary model** |
+| Outside validation sets | ⏳ built, **needs scoring on PACE** | ReadMe++ Hindi (1,486 rated sentences) and Hindi Wikipedia medical (600 passages) in `data/register_eval/`. COIL-D is gated: request access on Hugging Face |
+| Analysis (`analyze`) | ✅ runs; validation section pending | `literacy_eval/analysis_outputs/register_results.md` |
 
 **Two corpus variants, because the smallest class sets every class's size** (classes are kept equal-sized to avoid bias):
 
@@ -274,13 +275,18 @@ synthetic end-to-end check (middle class now predicted, 100% on an easy 3-class 
 
 | Check | Data | Pass condition |
 |---|---|---|
-| Held-out chapters and issues | `test.jsonl` | Accuracy, macro-F1 (each class counts equally), confusion matrix; clearly better than the length-only baseline |
-| Human difficulty ratings | **ReadMe++ Hindi**: ~1,500 sentences rated A1–C2 by humans ([github.com/tareknaous/readme](https://github.com/tareknaous/readme)) | Classifier scores rank sentences like the humans do (Spearman ρ clearly above 0). **This is our stand-in for a Hindi annotator.** |
-| Lay health text | COIL-D Health v2 (public-health messages, CC BY 4.0) | Mostly 5th / 10th |
-| Encyclopedia medical text | Hindi Wikipedia medical passages (MIRACL `hi`, filtered) | 10th / professional, rarely 5th |
+| Held-out chapters and issues | `test.jsonl` | Accuracy, macro-F1 and confusion matrix; clearly better than the sentence-length baseline (0.62) |
+| **Human difficulty ratings** | **ReadMe++ Hindi**: 1,491 sentences rated 1–6 (A1–C2) by human annotators across 16 domains (MIT license; clone in `../readme/`). Built: 1,486 rows | Classifier scores rank sentences like the humans do (Spearman ρ clearly above 0). **Our stand-in for a Hindi annotator.** Caveat: single sentences, median 16 words, shorter than training passages |
+| Encyclopedia medical text | Hindi Wikipedia medical passages (MIRACL `hi`, 2022 dump): 600 passages from 259 disease/treatment articles (biographies, hospitals, films and astrology filtered out) | Mostly 10th / professional, rarely 5th |
+| Lay health text | COIL-D Health v2 (public-health messages, CC BY 4.0) | Mostly 5th / 10th. **Gated on Hugging Face**: needs an access request |
 
-The last three sources were never seen in training, so they test whether the classifier learned **register** or
-just **NCERT vs ICMR**.
+These sources were never seen in training, so they test whether the classifier learned **register** or just
+**NCERT vs ICMR**.
+
+**How they're built and scored:** `python -m literacy_eval.register.validation_sets` writes `data/register_eval/*.jsonl`
+(same `normalize()` as everything else). Trained weights stay on PACE, so `scripts/register_score.sh` scores them there
+with every trained model (`literacy_eval/register/score.py`, no retraining). `analyze.py` then reports them in section B
+of `register_results.md`.
 
 ## 6. Scoring the 900 outputs
 
@@ -290,6 +296,11 @@ For each model:
 - **Ordering:** for each question, does the expected level rise from `low` to `mid` to `high`? Tested with the Page
   trend test across the three levels, and Wilcoxon for `low` vs `high`.
 - **Alongside:** usable-response rate and English (Latin-script) share per level. Neither comes from the classifier.
+
+Implemented in `literacy_eval/register/analyze.py` (run with `venv-analysis`, which has scipy). Each response's score is
+the word-weighted average of its windows. Paired tests reuse `literacy_eval/analysis/stats.py`. Output:
+`literacy_eval/analysis_outputs/register_results.md`, with A (training check), B (outside validation), C (LLM outputs
+for the primary run) and a robustness table across all passing runs.
 
 ## 7. Action items
 
@@ -349,6 +360,21 @@ send me `register_runs/*/*/metrics.json` and the `llm_window_scores.jsonl` files
 
 GPU: the script asks for `l40s`. If those are busy, change `--gres=gpu:l40s:1` in the script to `a40`, `a100` or `h100`.
 **Never `mi210`** (AMD).
+
+**Scoring the outside validation sets** (after the 4 training jobs; keep the `best.pt` files on PACE until this is done):
+```bash
+# 1. On the Mac, from the repo root: upload the two validation files
+H=gchiu6@login-ice.pace.gatech.edu
+(cd data && COPYFILE_DISABLE=1 tar czf - register_eval/readmepp_hi.jsonl register_eval/miracl_medical.jsonl) \
+  | ssh $H 'mkdir -p ~/scratch/register_eval && tar xzf - -C ~/scratch && ls ~/scratch/register_eval'
+
+# 2. On PACE, in the repo, after git pull:
+sbatch scripts/register_score.sh          # scores both files with every trained model (a few minutes)
+
+# 3. On the Mac: bring everything back (same command as before) and rebuild the report
+ssh $H 'cd ~/scratch && tar czf - --exclude=best.pt register_runs' | tar xzf - -C .
+venv-analysis/bin/python -m literacy_eval.register.analyze
+```
 
 ### For Claude
 - Done: `sources`, `ocr`, `normalize`, `clean_sources`, `chunk`, `build_corpus`, `shortcut_check`,
@@ -414,6 +440,8 @@ python -m pytest tests/test_register_*.py
   layers found broken, so everything is OCR'd. Shared normalizer, length matching and group splits adopted.
   Pipeline built; full OCR run; corpus built. The shortcut check found ICMR source markers (its own name, `डॉ`,
   meeting reports), and these were removed. Class 10 split by 4-page blocks.
+- **2026-10-13 (later):** Run 2 succeeded for 3 of 4 runs; IndicBERT chosen as primary. Built the outside validation sets
+  (ReadMe++, MIRACL medical), score-only mode + `register_score.sh`, and `analyze.py`.
 - **2026-10-13:** Class 9 biology added as corpus variant B (`class9_10`) so we can compare. Chapters were identified by
   OCR of each chapter's first page, because the 2025 book renumbered everything. Found and fixed the danda word-boundary
   bug in the imperative filter (section 4.3). SLURM script rewritten so every cache, temp file, log and result is on

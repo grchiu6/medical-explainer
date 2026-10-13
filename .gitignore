@@ -27,3 +27,4 @@ literacy_eval/analysis_outputs/features.csv
 data/register_raw/
 data/register_corpus*/
 register_runs/
+data/register_eval/
