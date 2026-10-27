@@ -58,7 +58,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || ec
 # TIP: build the venv once on a login node (same module load, then the venv/pip lines below), so a broken
 # install shows up before waiting in the GPU queue. After the pilot, pin the printed vllm version
 # (VLLM_SPEC="vllm==X.Y.Z") so the full run uses the same build.
-PY_MODULE="${PY_MODULE:-}"
+PY_MODULE="${PY_MODULE:-python/3.12.5}"
 VLLM_SPEC="${VLLM_SPEC:-vllm}"
 if [ -n "$PY_MODULE" ]; then
     module load "$PY_MODULE"
