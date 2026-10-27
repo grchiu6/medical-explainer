@@ -59,7 +59,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || ec
 # install shows up before waiting in the GPU queue. After the pilot, pin the printed vllm version
 # (VLLM_SPEC="vllm==X.Y.Z") so the full run uses the same build.
 PY_MODULE="${PY_MODULE:-python/3.12.5}"
-VLLM_SPEC="${VLLM_SPEC:-vllm}"
+VLLM_SPEC="${VLLM_SPEC:-vllm==0.32.0}"   # installed and imported on ICE L40S, 2026-10-27
 if [ -n "$PY_MODULE" ]; then
     module load "$PY_MODULE"
 fi
@@ -75,7 +75,8 @@ if ! "$VENV/bin/python" -c "import vllm" 2>/dev/null; then
     "$VENV/bin/pip" install "$VLLM_SPEC" pandas huggingface_hub
 fi
 "$VENV/bin/python" --version
-"$VENV/bin/pip" show vllm | head -2
+# (not `pip show | head`: head closes the pipe early and, under pipefail, that kills the job)
+"$VENV/bin/python" -c "import vllm; print('vllm', vllm.__version__)"
 
 cd "$SLURM_SUBMIT_DIR"
 "$VENV/bin/python" -m literacy_eval.judge.run \
