@@ -8,11 +8,12 @@
 #
 # USAGE:
 #   (Mac)  python -m literacy_eval.judge.jobs --out data/judge/jobs.jsonl
-#          scp data/judge/jobs.jsonl pace:~/scratch/judge/jobs.jsonl
+#          ssh gchiu6@login-ice.pace.gatech.edu 'mkdir -p ~/scratch/judge'     # GT VPN if off campus
+#          scp data/judge/jobs.jsonl gchiu6@login-ice.pace.gatech.edu:~/scratch/judge/jobs.jsonl
 #   (PACE, in the repo, after git pull)
 #          sbatch scripts/judge_run.sh                       # all jobs
 #          sbatch scripts/judge_run.sh --match controlled:   # extra args go to literacy_eval.judge.run
-#   (Mac)  scp pace:~/scratch/judge/results.jsonl data/judge/results.jsonl
+#   (Mac)  scp gchiu6@login-ice.pace.gatech.edu:~/scratch/judge/results.jsonl data/judge/results.jsonl
 #          python -m literacy_eval.judge.collect
 #
 # TIME: ~3,500 prompts of 1-6k characters on one L40S: roughly 1-3 h. GPU: NVIDIA only, never mi210.
