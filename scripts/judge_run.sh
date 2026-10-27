@@ -52,15 +52,23 @@ echo "=== Judge run: $(wc -l < "$JUDGE_DIR/jobs.jsonl") jobs, args: $* ==="
 echo "Started: $(date)   Node: $(hostname)"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "(nvidia-smi not available)"
 
-# vLLM needs Python >= 3.10. If the node's python3 is older, `module load` a newer one before sbatch
-# (e.g. `module avail python`). TIP: build the venv once on a login node by running these lines by hand,
-# so a broken install is found before waiting in the GPU queue. After the pilot, pin the printed vllm
-# version below (VLLM_SPEC="vllm==X.Y.Z") so the full run uses the same build.
+# vLLM needs Python >= 3.10, but the system python3 on ICE nodes is 3.9. Load a newer Python module:
+#     sbatch --export=ALL,PY_MODULE=python/3.12.5 scripts/judge_run.sh     (names: `module avail python`)
+# The module is loaded in the job too, because a venv's python links to the module's shared libraries.
+# TIP: build the venv once on a login node (same module load, then the venv/pip lines below), so a broken
+# install shows up before waiting in the GPU queue. After the pilot, pin the printed vllm version
+# (VLLM_SPEC="vllm==X.Y.Z") so the full run uses the same build.
+PY_MODULE="${PY_MODULE:-}"
 VLLM_SPEC="${VLLM_SPEC:-vllm}"
-python3 -c 'import sys; assert sys.version_info >= (3, 10), sys.version' \
-    || { echo "ERROR: python3 is $(python3 --version 2>&1); vLLM needs >= 3.10 (module load a newer python)"; exit 1; }
+if [ -n "$PY_MODULE" ]; then
+    module load "$PY_MODULE"
+fi
 if ! "$VENV/bin/python" -c "import vllm" 2>/dev/null; then
-    echo "--- (re)building $VENV: no importable vllm (first run, or an earlier install failed)"
+    python3 -c 'import sys; assert sys.version_info >= (3, 10)' 2>/dev/null || {
+        echo "ERROR: python3 is $(python3 --version 2>&1); vLLM needs >= 3.10."
+        echo "       Pass a newer module: sbatch --export=ALL,PY_MODULE=<name from 'module avail python'> scripts/judge_run.sh"
+        exit 1; }
+    echo "--- (re)building $VENV with $(python3 --version): no importable vllm (first run, or an earlier install failed)"
     rm -rf "$VENV"
     python3 -m venv "$VENV"
     "$VENV/bin/pip" install --upgrade pip
