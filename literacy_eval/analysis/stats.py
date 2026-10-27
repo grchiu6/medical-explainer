@@ -12,6 +12,7 @@ from the comparison and gives far more power than unpaired tests.
   holm              multiple-comparison correction within a family of tests
   wilson_ci         95% CI for a proportion
   bootstrap_ci      95% CI for any statistic, resampling items
+  weighted_kappa    chance-corrected agreement of two ordinal raters (judge vs BERT, judge vs labels)
 """
 
 from __future__ import annotations
@@ -119,3 +120,19 @@ def bootstrap_ci(values: np.ndarray, statistic=np.mean, n_boot: int = 2000,
     rng = np.random.default_rng(seed)
     boots = [statistic(rng.choice(values, size=len(values), replace=True)) for _ in range(n_boot)]
     return (float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5)))
+
+
+def weighted_kappa(a: np.ndarray, b: np.ndarray, n_levels: int = 3, weights: str = "quadratic") -> float:
+    """Cohen's weighted kappa for ratings 0..n_levels-1. NaN when no disagreement is expected by chance."""
+    a, b = np.asarray(a, dtype=int), np.asarray(b, dtype=int)
+    observed = np.zeros((n_levels, n_levels))
+    np.add.at(observed, (a, b), 1)
+    observed /= observed.sum()
+    expected = np.outer(observed.sum(axis=1), observed.sum(axis=0))
+    i, j = np.indices((n_levels, n_levels))
+    diff = np.abs(i - j) / (n_levels - 1)
+    w = diff ** 2 if weights == "quadratic" else diff
+    expected_disagreement = (w * expected).sum()
+    if expected_disagreement == 0:
+        return float("nan")
+    return float(1 - (w * observed).sum() / expected_disagreement)

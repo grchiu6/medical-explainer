@@ -73,3 +73,24 @@ def test_page_trend_can_test_a_decreasing_trend():
     decreasing = np.column_stack([base + 2, base + 1, base])
     assert S.page_trend(decreasing, increasing=False)["p"] < 0.001
     assert S.page_trend(decreasing, increasing=True)["p"] > 0.5
+
+
+def test_weighted_kappa_perfect_agreement_is_one():
+    a = np.array([0, 1, 2, 2, 1, 0])
+    assert S.weighted_kappa(a, a) == pytest.approx(1.0)
+
+
+def test_weighted_kappa_hand_computed_quadratic():
+    # observed weighted disagreement (0+0+0+.25+.25+1)/6 = .25; expected (uniform marginals) = 1/3
+    a, b = np.array([0, 1, 2, 0, 1, 2]), np.array([0, 1, 2, 1, 2, 0])
+    assert S.weighted_kappa(a, b) == pytest.approx(0.25, abs=1e-9)
+
+
+def test_weighted_kappa_linear_weights():
+    # linear: observed (0+0+0+.5+.5+1)/6 = 1/3; expected = (1/9) * (4*.5 + 2*1) = 4/9
+    a, b = np.array([0, 1, 2, 0, 1, 2]), np.array([0, 1, 2, 1, 2, 0])
+    assert S.weighted_kappa(a, b, weights="linear") == pytest.approx(1 - (1 / 3) / (4 / 9), abs=1e-9)
+
+
+def test_weighted_kappa_constant_ratings_is_nan():
+    assert math.isnan(S.weighted_kappa(np.array([1, 1, 1]), np.array([1, 1, 1])))
