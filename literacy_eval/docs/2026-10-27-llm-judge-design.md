@@ -276,3 +276,19 @@ word सूजन counted as a technical term). This is why the register validat
 
 Because only harm jobs were removed, every other prompt is byte-identical to the pilot (`PROMPT_VERSION` stays `v1`),
 and the full run resumes from the pilot's 500 results. Full job set: 2,925 prompts.
+
+### Which responses are judged (owner guideline, 2026-11-02)
+
+This replaces the earlier "rule-usable rows only" scope (Sections 3 and 5).
+
+| Situation | Run the judge? | In the evaluation? | In this data |
+|---|---|---|---|
+| **Invalid dataset sample**: question corrupted, incomplete or out of scope; answer garbled; CoT does not support it | judged, but dropped at analysis time (equivalent outcome; the audit can be finished after the run) | excluded from every primary metric, listed in report §C0; agreement incl. them kept as a robustness column | set by `ref_suspect` in `reference_audit.csv` (pending) |
+| **Generation failure**: empty output, crash, technical error | no | counted separately (`n_generation_failures`) | 0 of 900 |
+| **Poor response**: loop, echo, refusal, wrong language, nonsense | **yes** | **included in scoring** | 391 of 900: degenerate 206, echo 133, refusal 22, non-Hindi 19, too short 6, non-answer 5 |
+
+Consequences: the judge now scores all 900 responses (4,455 jobs in total), and every job carries the response's
+`failure_type`, so the report also shows scores per response type (§C1b). The IndicBERT comparison (B8) still
+covers only the 509 rule-usable responses, because the classifier scored only those. Known gap 1 (non-answers
+scored as contradictions) matters more now, because echoes and refusals are scored: check `contradict_pct`
+against the per-type breakdown.

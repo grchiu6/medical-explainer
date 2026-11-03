@@ -7,9 +7,10 @@ import pytest
 from literacy_eval.judge import report as R
 
 
-def _llm(task, model, level, item, score, error=""):
+def _llm(task, model, level, item, score, error="", failure_type="ok"):
     return {"job_id": f"{task}|{model}|{level}|{item}", "task": task, "model": model, "level": level,
-            "item_id": item, "score": score, "judge_error": error, "feedback": "fb", "set": ""}
+            "item_id": item, "score": score, "judge_error": error, "feedback": "fb", "set": "",
+            "failure_type": failure_type}
 
 
 def _scores(rows):
@@ -60,10 +61,15 @@ def test_match_rate_uses_cutpoints_and_target_levels():
 def test_agreement_columns_and_audit_pending():
     rows = [_llm("reference_agreement", "himed", "low", f"i{k}", s) for k, s in enumerate([5, 4, 1, 3] * 3)]
     t = R.llm_main_table(R.llm_rows(_scores(rows)), cuts=None, suspect=None).set_index(["model", "level"])
+    # audit pending: primary metrics use all items, and the robustness column says so
     assert t.loc[("himed", "low"), "agree_pct"] == 50.0 and t.loc[("himed", "low"), "contradict_pct"] == 25.0
-    assert t.loc[("himed", "low"), "agree_pct_excl_suspect"] == "audit pending"
+    assert t.loc[("himed", "low"), "agree_pct_incl_invalid"] == "audit pending"
+    # invalid item i2 (scored 1) leaves the PRIMARY numbers; the all-items figure moves to the robustness column
     t2 = R.llm_main_table(R.llm_rows(_scores(rows)), cuts=None, suspect={"i2"}).set_index(["model", "level"])
-    assert t2.loc[("himed", "low"), "agree_pct_excl_suspect"] == pytest.approx(54.5, abs=0.1)   # 6 of 11
+    assert t2.loc[("himed", "low"), "agree_pct"] == pytest.approx(54.5, abs=0.1)        # 6 of 11
+    assert t2.loc[("himed", "low"), "contradict_pct"] == pytest.approx(18.2, abs=0.1)   # 2 of 11
+    assert t2.loc[("himed", "low"), "agree_pct_incl_invalid"] == 50.0
+    assert t2.loc[("himed", "low"), "n"] == 11
 
 
 def test_paired_tests_report_n_too_small():
@@ -112,7 +118,7 @@ def test_small_cells_report_n_too_small_for_rates():
     rows = [_llm("reference_agreement", "airavata", "low", f"i{k}", 5) for k in range(7)] + \
            [_llm("consistency", "airavata", "low", f"i{k}", 4) for k in range(7)]
     t = R.llm_main_table(R.llm_rows(_scores(rows)), cuts=None, suspect=set()).set_index(["model", "level"])
-    for col in ("agree_pct", "contradict_pct", "agree_pct_excl_suspect", "consistency_pct_ge4", "consistency_95ci"):
+    for col in ("agree_pct", "contradict_pct", "agree_pct_incl_invalid", "consistency_pct_ge4", "consistency_95ci"):
         assert t.loc[("airavata", "low"), col] == "n too small"
 
 
@@ -140,3 +146,39 @@ def test_report_has_no_harm_section_or_column():
     text, tables = R.build_report(_scores(rows), clean=None, bert_dir=None, suspect=None)
     assert "harm" not in text.lower() and "judge_harm" not in tables
     assert not any("harm" in c for c in tables["judge_llm"].columns)
+
+
+def test_invalid_items_leave_every_primary_metric():
+    rows = [_llm("complexity", "himed", "low", f"i{k}", 1) for k in range(10)] + \
+           [_llm("complexity", "himed", "low", "bad", 5)]
+    t = R.llm_main_table(R.llm_rows(_scores(rows)), cuts=None, suspect={"bad"}).set_index(["model", "level"])
+    assert t.loc[("himed", "low"), "complexity_mean"] == 1.0 and t.loc[("himed", "low"), "n"] == 10
+    paired = R.paired_tests(R.exclude_invalid(R.llm_rows(_scores(rows)), {"bad"}))
+    assert "bad" not in set(R.exclude_invalid(R.llm_rows(_scores(rows)), {"bad"})["item_id"])
+
+
+def test_generation_failures_are_counted_per_cell():
+    rows = [_llm("complexity", "himed", "low", "i1", 2)]
+    clean = pd.DataFrame([{"model": "himed", "level": "low", "item_id": "i1", "answer": "उत्तर"},
+                          {"model": "himed", "level": "low", "item_id": "i2", "answer": ""},
+                          {"model": "himed", "level": "low", "item_id": "i3", "answer": None}])
+    t = R.llm_main_table(R.llm_rows(_scores(rows)), cuts=None, suspect=None, clean=clean).set_index(["model", "level"])
+    assert t.loc[("himed", "low"), "n_generation_failures"] == 2
+
+
+def test_scores_break_down_by_failure_type():
+    rows = [_llm("reference_agreement", "apollo", "low", "i1", 1, failure_type="degenerate"),
+            _llm("reference_agreement", "apollo", "low", "i2", 3, failure_type="degenerate"),
+            _llm("reference_agreement", "apollo", "low", "i3", 5)]
+    t = R.by_failure_type(R.llm_rows(_scores(rows))).set_index(["task", "failure_type"])
+    assert t.loc[("reference_agreement", "degenerate"), "n"] == 2
+    assert t.loc[("reference_agreement", "degenerate"), "mean_score"] == 2.0
+    assert t.loc[("reference_agreement", "ok (rule-usable)"), "mean_score"] == 5.0
+
+
+def test_report_states_what_is_in_and_out_of_the_evaluation():
+    rows = [_llm("complexity", "himed", "low", "i1", 2, failure_type="echo")]
+    clean = pd.DataFrame([{"model": "himed", "level": "low", "item_id": "i1", "answer": "x"}])
+    text, tables = R.build_report(_scores(rows), clean=clean, bert_dir=None, suspect={"i9"})
+    assert "Excluded dataset items" in text and "i9" in text
+    assert "Generation failures" in text and "judge_by_failure_type" in tables

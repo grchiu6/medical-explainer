@@ -17,7 +17,7 @@ def _item(i):
 
 def _row(level, item, usable=True, answer="यह दवा वर्ष 2015 से दी जाती है।", model="himed"):
     return {"model": model, "level": level, "item_id": item, "topic_hi": f"आयुर्वेद के अनुसार: प्रश्न {item}?",
-            "answer": answer, "usable_rules": usable}
+            "answer": answer, "usable_rules": usable, "failure_type": "ok" if usable else "degenerate"}
 
 
 @pytest.fixture
@@ -32,14 +32,16 @@ def toy():
     return SimpleNamespace(clean=pd.DataFrame(rows), ref=ref)
 
 
-def test_only_usable_nonempty_rows_become_jobs(toy):
+def test_every_response_with_text_becomes_a_job_but_generation_failures_do_not(toy):
+    # poor responses (rule-unusable: loops, echoes, refusals...) ARE judged; empty output is a generation failure
     items = {j["item_id"] for j in llm_jobs(toy.clean, toy.ref)}
-    assert items == {"i1", "i2"}
+    assert items == {"i1", "i2", "unusable_item"}
 
 
-def test_consistency_needs_both_levels_usable(toy):
+def test_consistency_pairs_need_both_levels_to_have_text(toy):
     ids = {j["job_id"] for j in llm_jobs(toy.clean, toy.ref) if j["task"] == "consistency"}
-    assert ids == {"consistency|himed|low-high|i1"}
+    assert ids == {"consistency|himed|low-high|i1", "consistency|himed|mid-high|i1",
+                   "consistency|himed|low-high|unusable_item"}
 
 
 def test_term_explanation_only_low_and_mid(toy):
@@ -52,7 +54,7 @@ def test_job_ids_and_counts(toy):
     assert len({j["job_id"] for j in jobs}) == len(jobs)
     assert "complexity|himed|high|i1" in {j["job_id"] for j in jobs}
     by_task = pd.Series([j["task"] for j in jobs]).value_counts().to_dict()
-    assert by_task == {"complexity": 4, "reference_agreement": 4, "term_explanation": 3, "consistency": 1}
+    assert by_task == {"complexity": 7, "reference_agreement": 7, "term_explanation": 5, "consistency": 3}
 
 
 def test_complexity_is_blind_and_normalised(toy):
@@ -83,9 +85,13 @@ def test_consistency_reference_is_the_high_answer(toy):
     assert j["pair"] == "low-high"
 
 
-def test_usable_column_as_strings_is_handled(toy):
-    clean = toy.clean.assign(usable_rules=toy.clean["usable_rules"].astype(str))
-    assert {j["item_id"] for j in llm_jobs(clean, toy.ref)} == {"i1", "i2"}
+def test_jobs_carry_failure_type_and_rule_usability(toy):
+    jobs = {j["job_id"]: j for j in llm_jobs(toy.clean, toy.ref)}
+    assert jobs["complexity|himed|low|unusable_item"]["failure_type"] == "degenerate"
+    assert jobs["complexity|himed|low|unusable_item"]["usable_rules"] is False
+    assert jobs["complexity|himed|low|i1"]["failure_type"] == "ok"
+    clean = toy.clean.assign(usable_rules=toy.clean["usable_rules"].astype(str))   # as read from CSV
+    assert {j["job_id"]: j for j in llm_jobs(clean, toy.ref)}["complexity|himed|low|i1"]["usable_rules"] is True
 
 
 def test_jsonl_roundtrip_skips_truncated_last_line(tmp_path):

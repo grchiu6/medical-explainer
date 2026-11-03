@@ -3,12 +3,19 @@
 WHAT A JOB IS: one prompt = one (task, response) = one 1-5 score. Jobs are built here on the Mac,
 uploaded to PACE, run by literacy_eval.judge.run, and read back by literacy_eval.judge.collect.
 
-| task                | rows                      | response           | reference                     |
-|---------------------|---------------------------|--------------------|-------------------------------|
-| complexity          | usable                    | normalize(answer)  | none (blind: generic instr.)  |
-| term_explanation    | usable, low/mid           | answer             | none                          |
-| reference_agreement | usable                    | answer             | correct option + CoT          |
-| consistency         | low/mid AND high usable   | low/mid answer     | same model's high answer      |
+| task                | rows                         | response           | reference                     |
+|---------------------|------------------------------|--------------------|-------------------------------|
+| complexity          | every answer with text       | normalize(answer)  | none (blind: generic instr.)  |
+| term_explanation    | ... at low/mid               | answer             | none                          |
+| reference_agreement | every answer with text       | answer             | correct option + CoT          |
+| consistency         | low/mid AND high have text   | low/mid answer     | same model's high answer      |
+
+WHICH RESPONSES ARE JUDGED (project guideline, 2026-11-02):
+  generation failure (empty output / technical error)  -> NOT judged; counted separately in the report
+  poor response (loop, echo, refusal, non-Hindi, ...)  -> judged and scored like any other answer
+  invalid dataset item (ref_suspect in the audit)      -> judged here, dropped from primary metrics in report
+Each job carries the response's `failure_type` from clean.csv ("ok" = passed the rule gate), so the report
+can also break scores down by failure type.
 
 WHY complexity NORMALISES: the register corpus passages it is validated on went through
 register.normalize (numbers -> 0, danda fixes), so the LLM outputs must too. Judge 2 keeps the raw
@@ -50,9 +57,15 @@ def load_clean(path: Path = CLEAN_CSV) -> pd.DataFrame:
     return pd.read_csv(path, dtype={"answer": str}).fillna({"answer": ""})
 
 
-def _usable(clean: pd.DataFrame) -> pd.DataFrame:
-    ok = clean["usable_rules"].astype(str) == "True"
-    return clean[ok & (clean["answer"].astype(str).str.strip() != "")]
+def _has_text(clean: pd.DataFrame) -> pd.DataFrame:
+    """Every response except generation failures (empty output)."""
+    return clean[clean["answer"].fillna("").astype(str).str.strip() != ""]
+
+
+def _meta(r) -> dict:
+    failure = getattr(r, "failure_type", "")
+    return {"failure_type": failure if isinstance(failure, str) and failure else "ok",
+            "usable_rules": str(getattr(r, "usable_rules", "")) == "True"}
 
 
 def _job(task: str, model: str, level: str, item_id: str, prompt: str, **extra) -> dict:
@@ -61,18 +74,19 @@ def _job(task: str, model: str, level: str, item_id: str, prompt: str, **extra) 
 
 
 def llm_jobs(clean: pd.DataFrame, reference: dict[str, dict], rubrics: dict = RUBRICS) -> list[dict]:
-    rows = _usable(clean)
+    rows = _has_text(clean)
     jobs = []
     for r in rows.itertuples():
         item = reference[r.item_id]
+        meta = _meta(r)
         jobs.append(_job("complexity", r.model, r.level, r.item_id,
-                         build_prompt(COMPLEXITY_INSTRUCTION, normalize(r.answer), rubrics["complexity"])))
+                         build_prompt(COMPLEXITY_INSTRUCTION, normalize(r.answer), rubrics["complexity"]), **meta))
         if r.level in ("low", "mid"):
             jobs.append(_job("term_explanation", r.model, r.level, r.item_id,
-                             build_prompt(r.topic_hi, r.answer, rubrics["term_explanation"])))
+                             build_prompt(r.topic_hi, r.answer, rubrics["term_explanation"]), **meta))
         jobs.append(_job("reference_agreement", r.model, r.level, r.item_id,
                          build_prompt(r.topic_hi, r.answer, rubrics["reference_agreement"],
-                                      reference=reference_answer(item))))
+                                      reference=reference_answer(item)), **meta))
 
     answers = {(r.model, r.level, r.item_id): r for r in rows.itertuples()}
     for (model, level, item_id), r in sorted(answers.items()):
@@ -82,7 +96,7 @@ def llm_jobs(clean: pd.DataFrame, reference: dict[str, dict], rubrics: dict = RU
         pair = f"{level}-high"
         job = _job("consistency", model, pair, item_id,
                    build_prompt(r.topic_hi, r.answer, rubrics["consistency"], reference=high.answer),
-                   pair=pair)
+                   pair=pair, **_meta(r), high_failure_type=_meta(high)["failure_type"])
         job["level"] = level
         jobs.append(job)
     return jobs

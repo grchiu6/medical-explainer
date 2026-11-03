@@ -6,9 +6,12 @@ Then open literacy_eval/reference/reference_audit.csv in Google Sheets and trans
     question_en:        =GOOGLETRANSLATE(D2, "hi", "en")
     correct_option_en:  =GOOGLETRANSLATE(E2, "hi", "en")
     cot_en:             =GOOGLETRANSLATE(F2, "hi", "en")
-(fill down all 60 rows). For each row set ref_suspect = y if the correct answer looks like a garbled
-term (e.g. "सदु कोष" for "मृदु कोष्ठ") or the explanation does not support it, and say why in `note`.
-Download as CSV over the same file. The report then shows accuracy with suspect items excluded.
+(fill down all 60 rows). For each row set ref_suspect = y if the item is an INVALID DATASET SAMPLE:
+  - the question is corrupted, incomplete, or outside the research scope, or
+  - the correct answer looks like a garbled term (e.g. "सदु कोष" for "मृदु कोष्ठ"), or
+  - the explanation does not support the marked answer,
+and say why in `note`. Download as CSV over the same file. Flagged items are excluded from every primary
+metric in the report (and listed there); agreement including them is kept as a robustness column.
 """
 
 from __future__ import annotations

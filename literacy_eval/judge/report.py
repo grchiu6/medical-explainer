@@ -146,7 +146,7 @@ def topic_table(scores: pd.DataFrame) -> pd.DataFrame:
 
 def length_table(llm: pd.DataFrame, scores: pd.DataFrame, clean: pd.DataFrame | None) -> pd.DataFrame:
     rows = []
-    if clean is not None:
+    if clean is not None and "n_hindi_words" in clean:
         merged = llm.merge(clean[["model", "level", "item_id", "n_hindi_words"]], on=["model", "level", "item_id"])
         for task in ("complexity", "reference_agreement"):
             sub = merged[merged["task"] == task]
@@ -221,17 +221,37 @@ def _rate(mask) -> float | str:
     return _pct(mask) if len(mask) >= S.MIN_PAIRED_N else "n too small"
 
 
-def llm_main_table(llm: pd.DataFrame, cuts, suspect: set[str] | None) -> pd.DataFrame:
+def exclude_invalid(llm: pd.DataFrame, suspect: set[str] | None) -> pd.DataFrame:
+    """Drop invalid dataset items (ref_suspect in the audit) from primary metrics. No audit yet: keep all."""
+    return llm if not suspect else llm[~llm["item_id"].isin(suspect)]
+
+
+def generation_failures(clean: pd.DataFrame | None, suspect: set[str] | None = None) -> pd.DataFrame:
+    """Responses with no text (empty output / technical error): never judged, counted per model x level."""
+    if clean is None:
+        return pd.DataFrame(columns=["model", "level", "n_generation_failures"])
+    c = clean if not suspect else clean[~clean["item_id"].isin(suspect)]
+    empty = c["answer"].fillna("").astype(str).str.strip() == ""
+    return (c[empty].groupby(["model", "level"]).size().rename("n_generation_failures").reset_index())
+
+
+def llm_main_table(llm: pd.DataFrame, cuts, suspect: set[str] | None,
+                   clean: pd.DataFrame | None = None) -> pd.DataFrame:
+    """One row per model x level. Primary metrics exclude invalid items; `agree_pct_incl_invalid` keeps them."""
+    primary = exclude_invalid(llm, suspect)
+    failures = generation_failures(clean, suspect).set_index(["model", "level"])["n_generation_failures"]
     rows = []
     for model in MODELS:
         for level in LEVELS:
-            cell = llm[(llm["model"] == model) & (llm["level"] == level)]
-            if cell.empty:
+            cell = primary[(primary["model"] == model) & (primary["level"] == level)]
+            n_fail = int(failures.get((model, level), 0))
+            if cell.empty and not n_fail:
                 continue
             task = {t: cell[cell["task"] == t] for t in
                     ("complexity", "term_explanation", "reference_agreement", "consistency")}
             cx, ag, cs = task["complexity"], task["reference_agreement"], task["consistency"]
             row = {"model": model, "level": level, "n": cx["item_id"].nunique() or cell["item_id"].nunique(),
+                   "n_generation_failures": n_fail,
                    "complexity_mean": round(cx["score"].mean(), 2) if len(cx) else float("nan")}
             if cuts is not None and len(cx):
                 row["complexity_match_pct"] = _pct(apply_cutpoints(cx["score"].to_numpy(float), cuts) == TARGET_LEVEL[level])
@@ -242,10 +262,11 @@ def llm_main_table(llm: pd.DataFrame, cuts, suspect: set[str] | None) -> pd.Data
             row["agree_pct"] = _rate(ag["score"] >= 4) if len(ag) else ""
             row["contradict_pct"] = _rate(ag["score"] <= 2) if len(ag) else ""
             if suspect is None:
-                row["agree_pct_excl_suspect"] = "audit pending"
+                row["agree_pct_incl_invalid"] = "audit pending"
             else:
-                kept = ag[~ag["item_id"].isin(suspect)]
-                row["agree_pct_excl_suspect"] = _rate(kept["score"] >= 4) if len(kept) else ""
+                everything = llm[(llm["model"] == model) & (llm["level"] == level) &
+                                 (llm["task"] == "reference_agreement")]
+                row["agree_pct_incl_invalid"] = _rate(everything["score"] >= 4) if len(everything) else ""
             if len(cs):
                 ge4 = (cs["score"] >= 4).to_numpy(float)
                 lo, hi = S.bootstrap_ci(ge4)
@@ -256,6 +277,16 @@ def llm_main_table(llm: pd.DataFrame, cuts, suspect: set[str] | None) -> pd.Data
                 row.update(consistency_mean="", consistency_pct_ge4="", consistency_95ci="")
             rows.append(row)
     return pd.DataFrame(rows)
+
+
+def by_failure_type(llm: pd.DataFrame) -> pd.DataFrame:
+    """Scores per task for rule-usable answers vs each kind of poor response (all are judged and scored)."""
+    ft = llm.get("failure_type", pd.Series("ok", index=llm.index)).fillna("ok").replace({"": "ok"})
+    d = llm.assign(failure_type=ft.replace({"ok": "ok (rule-usable)"}))
+    g = d.groupby(["task", "failure_type"])["score"]
+    out = pd.DataFrame({"n": g.size(), "mean_score": g.mean().round(2),
+                        "pct_ge4": g.apply(lambda x: _pct(x >= 4))})
+    return out.reset_index()
 
 
 def _wide(llm: pd.DataFrame, model: str) -> pd.DataFrame:
@@ -326,7 +357,8 @@ _OPTIONAL_COLUMNS = {"set": "", "case": "", "label": "", "health": "", "domain":
 def build_report(scores: pd.DataFrame, clean: pd.DataFrame | None, bert_dir: Path | None,
                  suspect: set[str] | None) -> tuple[str, dict[str, pd.DataFrame]]:
     scores = scores.assign(**{c: v for c, v in _OPTIONAL_COLUMNS.items() if c not in scores})
-    llm = llm_rows(scores)
+    all_llm = llm_rows(scores)
+    llm = exclude_invalid(all_llm, suspect)        # primary evaluation set
     cuts = fit_on_val(scores)
     bert = _bert_levels(bert_dir)
     tables: dict[str, pd.DataFrame] = {}
@@ -387,16 +419,34 @@ def build_report(scores: pd.DataFrame, clean: pd.DataFrame | None, bert_dir: Pat
               md(jb[1]), ""]
     tables["judge_validation"] = pd.DataFrame(val_rows)
 
-    main_t = llm_main_table(llm, cuts, suspect)
+    main_t = llm_main_table(all_llm, cuts, suspect, clean)
+    failure_t = by_failure_type(llm)
     paired = paired_tests(llm)
     fig = figure_data(llm, bert)
-    tables.update(judge_llm=main_t, judge_paired=paired, judge_figure_data=fig)
+    tables.update(judge_llm=main_t, judge_paired=paired, judge_figure_data=fig, judge_by_failure_type=failure_t)
     L += ["## C. LLM outputs", ""]
+    fails = generation_failures(clean, suspect)
+    judged = llm[llm["task"] == "complexity"].get("failure_type", pd.Series(dtype=str)).fillna("ok")
+    L += ["### C0. What is in the evaluation", "",
+          "Following the project guideline: invalid dataset items are excluded from primary metrics (and "
+          "reported); generation failures are not judged and are counted separately; poor responses (loops, "
+          "echoes, refusals, wrong language) ARE judged and scored.", "",
+          "- **Excluded dataset items** (ref_suspect in the reference audit): " +
+          ("audit pending — all 60 items are in the primary metrics." if suspect is None else
+           f"{len(suspect)}: {', '.join(sorted(suspect)) or 'none'}."),
+          f"- **Generation failures** (empty output, not judged): {int(fails['n_generation_failures'].sum()) if len(fails) else 0}.",
+          f"- **Responses judged**: {len(judged)} — " +
+          (", ".join(f"{k}: {v}" for k, v in judged.value_counts().items()) or "none") +
+          " (`ok` = passed the rule-based usability gate).", ""]
     L += ["### C1. Main table", "",
           "One row per model x level. `complexity_match_pct`: judge level (via B1 cut-points) equals the requested "
           "level. `agree_pct` / `contradict_pct`: reference agreement >= 4 / <= 2. Consistency compares each "
           "low/mid answer with the same model's high answer (% >= 4, bootstrap 95% CI).", "",
           md(main_t.set_index(["model", "level"])) if len(main_t) else "*No LLM rows scored yet.*", ""]
+    L += ["### C1b. Scores by response type", "",
+          "Rule-usable answers vs each kind of poor response, per judge task. Poor responses are part of the "
+          "primary metrics; this table shows how much they pull them down.", "",
+          md(failure_t.set_index(["task", "failure_type"])) if len(failure_t) else "*No LLM rows scored yet.*", ""]
     L += ["### C2. Paired tests on complexity (low < mid < high)", "",
           "Page's L over items scored at all 3 levels; Wilcoxon low vs high; Holm across models. "
           f"Fewer than {S.MIN_PAIRED_N} items: 'n too small'.", "",
