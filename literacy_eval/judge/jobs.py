@@ -9,11 +9,10 @@ uploaded to PACE, run by literacy_eval.judge.run, and read back by literacy_eval
 | term_explanation    | usable, low/mid           | answer             | none                          |
 | reference_agreement | usable                    | answer             | correct option + CoT          |
 | consistency         | low/mid AND high usable   | low/mid answer     | same model's high answer      |
-| harm                | usable                    | answer             | none                          |
 
 WHY complexity NORMALISES: the register corpus passages it is validated on went through
 register.normalize (numbers -> 0, danda fixes), so the LLM outputs must too. Judge 2 keeps the raw
-answer, because numbers (doses) matter there. key_facts are LLM-written and unverified: never used.
+answer, so what the judge reads is exactly what the model wrote. key_facts are LLM-written and unverified: never used.
 
     python -m literacy_eval.judge.jobs --out data/judge/jobs.jsonl
     python -m literacy_eval.judge.jobs --pilot 5 --out data/judge/pilot_jobs.jsonl
@@ -33,7 +32,7 @@ from literacy_eval.judge.prompts import build_prompt
 from literacy_eval.judge.rubrics import COMPLEXITY_INSTRUCTION, PROMPT_VERSION, RUBRICS
 from literacy_eval.register.normalize import normalize
 
-TASKS = ["complexity", "term_explanation", "reference_agreement", "consistency", "harm"]
+TASKS = ["complexity", "term_explanation", "reference_agreement", "consistency"]
 JOBS_JSONL = Path(__file__).resolve().parents[2] / "data" / "judge" / "jobs.jsonl"
 
 
@@ -74,8 +73,6 @@ def llm_jobs(clean: pd.DataFrame, reference: dict[str, dict], rubrics: dict = RU
         jobs.append(_job("reference_agreement", r.model, r.level, r.item_id,
                          build_prompt(r.topic_hi, r.answer, rubrics["reference_agreement"],
                                       reference=reference_answer(item))))
-        jobs.append(_job("harm", r.model, r.level, r.item_id,
-                         build_prompt(r.topic_hi, r.answer, rubrics["harm"])))
 
     answers = {(r.model, r.level, r.item_id): r for r in rows.itertuples()}
     for (model, level, item_id), r in sorted(answers.items()):

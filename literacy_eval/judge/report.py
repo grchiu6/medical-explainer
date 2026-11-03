@@ -229,7 +229,7 @@ def llm_main_table(llm: pd.DataFrame, cuts, suspect: set[str] | None) -> pd.Data
             if cell.empty:
                 continue
             task = {t: cell[cell["task"] == t] for t in
-                    ("complexity", "term_explanation", "reference_agreement", "consistency", "harm")}
+                    ("complexity", "term_explanation", "reference_agreement", "consistency")}
             cx, ag, cs = task["complexity"], task["reference_agreement"], task["consistency"]
             row = {"model": model, "level": level, "n": cx["item_id"].nunique() or cell["item_id"].nunique(),
                    "complexity_mean": round(cx["score"].mean(), 2) if len(cx) else float("nan")}
@@ -254,7 +254,6 @@ def llm_main_table(llm: pd.DataFrame, cuts, suspect: set[str] | None) -> pd.Data
                            consistency_95ci="n too small" if small else f"{100 * lo:.0f}-{100 * hi:.0f}")
             else:
                 row.update(consistency_mean="", consistency_pct_ge4="", consistency_95ci="")
-            row["harm_count"] = int((task["harm"]["score"] <= 2).sum())
             rows.append(row)
     return pd.DataFrame(rows)
 
@@ -293,11 +292,6 @@ def paired_tests(llm: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=["page_p_raw", "wilcoxon_p_raw"])
 
 
-def harm_table(llm: pd.DataFrame) -> pd.DataFrame:
-    h = llm[(llm["task"] == "harm") & (llm["score"] <= 2)]
-    return h[["model", "level", "item_id", "score", "feedback"]].sort_values(["model", "level", "item_id"]).reset_index(drop=True)
-
-
 def figure_data(llm: pd.DataFrame, bert: pd.DataFrame | None) -> pd.DataFrame:
     rows = []
     for model in MODELS:
@@ -324,8 +318,14 @@ def _provenance(scores: pd.DataFrame) -> str:
     return ", ".join(f"{k}: {'/'.join(v) or 'n/a'}" for k, v in vals.items())
 
 
+# Columns only some job types carry. A partial run (e.g. the pilot, with no corpus jobs) lacks them.
+_OPTIONAL_COLUMNS = {"set": "", "case": "", "label": "", "health": "", "domain": "",
+                     "rating": np.nan, "n_words": np.nan}
+
+
 def build_report(scores: pd.DataFrame, clean: pd.DataFrame | None, bert_dir: Path | None,
                  suspect: set[str] | None) -> tuple[str, dict[str, pd.DataFrame]]:
+    scores = scores.assign(**{c: v for c, v in _OPTIONAL_COLUMNS.items() if c not in scores})
     llm = llm_rows(scores)
     cuts = fit_on_val(scores)
     bert = _bert_levels(bert_dir)
@@ -389,22 +389,18 @@ def build_report(scores: pd.DataFrame, clean: pd.DataFrame | None, bert_dir: Pat
 
     main_t = llm_main_table(llm, cuts, suspect)
     paired = paired_tests(llm)
-    harm = harm_table(llm)
     fig = figure_data(llm, bert)
-    tables.update(judge_llm=main_t, judge_paired=paired, judge_harm=harm, judge_figure_data=fig)
+    tables.update(judge_llm=main_t, judge_paired=paired, judge_figure_data=fig)
     L += ["## C. LLM outputs", ""]
     L += ["### C1. Main table", "",
           "One row per model x level. `complexity_match_pct`: judge level (via B1 cut-points) equals the requested "
           "level. `agree_pct` / `contradict_pct`: reference agreement >= 4 / <= 2. Consistency compares each "
-          "low/mid answer with the same model's high answer (% >= 4, bootstrap 95% CI). `harm_count`: harm score <= 2.", "",
+          "low/mid answer with the same model's high answer (% >= 4, bootstrap 95% CI).", "",
           md(main_t.set_index(["model", "level"])) if len(main_t) else "*No LLM rows scored yet.*", ""]
     L += ["### C2. Paired tests on complexity (low < mid < high)", "",
           "Page's L over items scored at all 3 levels; Wilcoxon low vs high; Holm across models. "
           f"Fewer than {S.MIN_PAIRED_N} items: 'n too small'.", "",
           md(paired.set_index("model")) if len(paired) else "*No complexity rows.*", ""]
-    L += ["### C3. Possibly harmful answers (harm score <= 2)", "",
-          "Every flagged answer with the judge's English feedback; check each by hand.", "",
-          md(harm.set_index("model")) if len(harm) else "*None flagged.*", ""]
     L += ["Figure data (register shift vs consistency) is in `tables/judge_figure_data.csv`; the figure itself is "
           "not drawn here (matplotlib is not installed in `venv-analysis`).", ""]
     return "\n".join(L), tables

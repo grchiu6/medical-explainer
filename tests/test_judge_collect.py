@@ -15,33 +15,33 @@ def _res(job_id, output, ok, n=512):
 
 @pytest.fixture
 def scored(tmp_path):
-    jobs = [{"job_id": f"harm|himed|low|i{k}", "task": "harm", "model": "himed", "level": "low",
+    jobs = [{"job_id": f"complexity|himed|low|i{k}", "task": "complexity", "model": "himed", "level": "low",
              "item_id": f"i{k}", "prompt": "P", "prompt_version": "v1"} for k in range(3)]
-    results = [_res("harm|himed|low|i0", "Feedback: cut", False),
-               _res("harm|himed|low|i0", "Feedback: fine [RESULT] 4", True, 1024),
-               _res("harm|himed|low|i1", "Feedback: never", False, 512),
-               _res("harm|himed|low|i1", "Feedback: still never", False, 1024)]
+    results = [_res("complexity|himed|low|i0", "Feedback: cut", False),
+               _res("complexity|himed|low|i0", "Feedback: fine [RESULT] 4", True, 1024),
+               _res("complexity|himed|low|i1", "Feedback: never", False, 512),
+               _res("complexity|himed|low|i1", "Feedback: still never", False, 1024)]
     write_jsonl(jobs, tmp_path / "jobs.jsonl"); write_jsonl(results, tmp_path / "res.jsonl")
     return collect(tmp_path / "jobs.jsonl", tmp_path / "res.jsonl").set_index("job_id")
 
 
 def test_latest_ok_row_wins(scored):
-    row = scored.loc["harm|himed|low|i0"]
+    row = scored.loc["complexity|himed|low|i0"]
     assert row["score"] == 4 and row["feedback"] == "fine" and row["judge_error"] == ""
 
 
 def test_unparsable_keeps_error_text(scored):
-    assert "RESULT" in scored.loc["harm|himed|low|i1", "judge_error"]
-    assert pd.isna(scored.loc["harm|himed|low|i1", "score"])
+    assert "RESULT" in scored.loc["complexity|himed|low|i1", "judge_error"]
+    assert pd.isna(scored.loc["complexity|himed|low|i1", "score"])
 
 
 def test_missing_result_is_marked(scored):
-    assert scored.loc["harm|himed|low|i2", "judge_error"] == "missing"
+    assert scored.loc["complexity|himed|low|i2", "judge_error"] == "missing"
 
 
 def test_score_dtype_and_no_prompt_column(scored):
     assert str(scored["score"].dtype) == "Int64" and "prompt" not in scored.columns
-    assert scored.loc["harm|himed|low|i0", "judge_revision"] == "abc"
+    assert scored.loc["complexity|himed|low|i0", "judge_revision"] == "abc"
 
 
 REF = {"i1": {"id": "i1", "system": "Ayurveda", "subject": "treatment", "original_question": "प्रश्न?\nA. क",

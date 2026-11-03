@@ -96,8 +96,8 @@ def test_validation_jobs_ids_unique_and_complete(tmp_path, ref2):
     evald = tmp_path / "eval"; evald.mkdir()
     _write(evald / "readmepp_hi.jsonl", [{"id": "r1", "text": "वाक्य", "rating": "2.0", "domain": "Wikipedia"}])
     _write(evald / "miracl_medical.jsonl", [{"id": "m1", "text": "रोग", "title": "t"}])
-    llm = [{"job_id": f"harm|himed|low|i{k}", "task": "harm", "model": "himed", "level": "low",
-            "item_id": "i1", "prompt": build_prompt("q", "उत्तर", RUBRICS["harm"]), "prompt_version": "v1"}
+    llm = [{"job_id": f"term_explanation|himed|low|i{k}", "task": "term_explanation", "model": "himed", "level": "low",
+            "item_id": "i1", "prompt": build_prompt("q", "उत्तर", RUBRICS["term_explanation"]), "prompt_version": "v1"}
            for k in range(20)]
 
     jobs = validation_jobs(ref2, llm, corpus_dir=corpus, eval_dir=evald)
@@ -111,14 +111,14 @@ def test_validation_jobs_ids_unique_and_complete(tmp_path, ref2):
     assert test0["label"] == "grade5" and test0["health"] is True
     assert test0["n_words"] == 3
     para = next(j for j in jobs if j["job_id"].startswith("para:"))
-    assert format_rubric(PARAPHRASED["harm"]) in para["prompt"]
-    assert format_rubric(RUBRICS["harm"]) not in para["prompt"]
+    assert format_rubric(PARAPHRASED["term_explanation"]) in para["prompt"]
+    assert format_rubric(RUBRICS["term_explanation"]) not in para["prompt"]
     cons = next(j for j in jobs if j["job_id"] == "consistency|controlled:swapped|i1")
     assert "###Reference Answer (Score 5):\n" + reference_answer(ref2["i1"]) in cons["prompt"]
 
 
 def test_paraphrase_of_a_prompt_without_its_rubric_raises(ref2, tmp_path):
-    llm = [{"job_id": "harm|himed|low|i1", "task": "harm", "prompt": "no rubric here"}] * 10
+    llm = [{"job_id": "term_explanation|himed|low|i1", "task": "term_explanation", "prompt": "no rubric here"}] * 10
     with pytest.raises(ValueError):
         validation_jobs(ref2, llm, corpus_dir=tmp_path, eval_dir=tmp_path, include_sets=False)
 

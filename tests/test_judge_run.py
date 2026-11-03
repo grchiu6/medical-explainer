@@ -11,7 +11,7 @@ from literacy_eval.judge.run import run
 @pytest.fixture
 def jobs3(tmp_path):
     path = tmp_path / "jobs.jsonl"
-    write_jsonl([{"job_id": f"harm|m|low|i{k}", "task": "harm", "prompt": f"P{k}", "prompt_version": "v1"}
+    write_jsonl([{"job_id": f"complexity|m|low|i{k}", "task": "complexity", "prompt": f"P{k}", "prompt_version": "v1"}
                  for k in range(3)], path)
     return path
 
@@ -46,7 +46,7 @@ def test_unparsable_output_is_retried_once_with_more_tokens(tmp_path, jobs3):
     gen = FakeGen(lambda p, n: "Feedback: cut" if (p == "P1" and n == 512) else "Feedback: ok [RESULT] 3")
     _run(jobs3, out, gen)
     assert [n for _, n in gen.calls] == [512, 1024] and gen.calls[1][0] == ["P1"]
-    rows = [r for r in read_jsonl(out) if r["job_id"] == "harm|m|low|i1"]
+    rows = [r for r in read_jsonl(out) if r["job_id"] == "complexity|m|low|i1"]
     assert [(r["ok"], r["max_tokens"]) for r in rows] == [(False, 512), (True, 1024)]
 
 
@@ -60,8 +60,8 @@ def test_still_unparsable_after_retry_is_not_retried_again(tmp_path, jobs3):
 
 def test_truncated_last_line_job_is_redone(tmp_path, jobs3):
     out = tmp_path / "out.jsonl"
-    good = {"job_id": "harm|m|low|i0", "output": "Feedback: [RESULT] 2", "ok": True, "max_tokens": 512}
-    out.write_text(json.dumps(good) + '\n{"job_id": "harm|m|low|i1", "outp', encoding="utf-8")
+    good = {"job_id": "complexity|m|low|i0", "output": "Feedback: [RESULT] 2", "ok": True, "max_tokens": 512}
+    out.write_text(json.dumps(good) + '\n{"job_id": "complexity|m|low|i1", "outp', encoding="utf-8")
     gen = FakeGen(_ok)
     _run(jobs3, out, gen)
     assert gen.calls[0][0] == ["P1", "P2"]
@@ -85,8 +85,8 @@ def test_provenance_fields_present(tmp_path, jobs3):
 
 def test_resume_twice_after_a_truncated_line_does_not_crash(tmp_path, jobs3):
     out = tmp_path / "out.jsonl"
-    good = {"job_id": "harm|m|low|i0", "output": "Feedback: [RESULT] 2", "ok": True, "max_tokens": 512}
-    out.write_text(json.dumps(good) + '\n{"job_id": "harm|m|low|i1", "outp', encoding="utf-8")
+    good = {"job_id": "complexity|m|low|i0", "output": "Feedback: [RESULT] 2", "ok": True, "max_tokens": 512}
+    out.write_text(json.dumps(good) + '\n{"job_id": "complexity|m|low|i1", "outp', encoding="utf-8")
     _run(jobs3, out, FakeGen(_ok))
     gen = FakeGen(_ok)
     assert _run(jobs3, out, gen) == 0 and gen.calls == []

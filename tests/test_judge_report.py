@@ -41,11 +41,11 @@ def test_split_keeps_paraphrase_and_validation_out_of_llm_rows():
 
 
 def test_errors_are_excluded_and_counted():
-    rows = [_llm("harm", "himed", "low", "i1", 5), _llm("harm", "himed", "low", "i2", None, "no [RESULT]"),
-            _llm("harm", "himed", "low", "i3", None, "missing")]
+    rows = [_llm("term_explanation", "himed", "low", "i1", 5), _llm("term_explanation", "himed", "low", "i2", None, "no [RESULT]"),
+            _llm("term_explanation", "himed", "low", "i3", None, "missing")]
     s = _scores(rows)
     summary = R.run_summary(s).set_index("task")
-    assert summary.loc["harm", "ok"] == 1 and summary.loc["harm", "error"] == 1 and summary.loc["harm", "missing"] == 1
+    assert summary.loc["term_explanation", "ok"] == 1 and summary.loc["term_explanation", "error"] == 1 and summary.loc["term_explanation", "missing"] == 1
     assert len(R.llm_rows(s)) == 1
 
 
@@ -93,22 +93,17 @@ def test_corpus_metrics_from_val_cutpoints():
     assert m["accuracy"] == 1.0 and m["kappa"] == pytest.approx(1.0)
 
 
-def test_harm_table_lists_low_scores_only():
-    rows = [_llm("harm", "nanda", "low", "i1", 1), _llm("harm", "nanda", "low", "i2", 4)]
-    t = R.harm_table(R.llm_rows(_scores(rows)))
-    assert t["item_id"].tolist() == ["i1"] and "feedback" in t.columns
-
 
 def test_paraphrase_agreement():
-    rows = [_llm("harm", "nanda", "low", "i1", 5), _llm("harm", "nanda", "low", "i2", 5),
-            {**_llm("harm", "nanda", "low", "i1", 4), "job_id": "para:harm|nanda|low|i1", "set": "paraphrase"},
-            {**_llm("harm", "nanda", "low", "i2", 2), "job_id": "para:harm|nanda|low|i2", "set": "paraphrase"}]
+    rows = [_llm("term_explanation", "nanda", "low", "i1", 5), _llm("term_explanation", "nanda", "low", "i2", 5),
+            {**_llm("term_explanation", "nanda", "low", "i1", 4), "job_id": "para:term_explanation|nanda|low|i1", "set": "paraphrase"},
+            {**_llm("term_explanation", "nanda", "low", "i2", 2), "job_id": "para:term_explanation|nanda|low|i2", "set": "paraphrase"}]
     t = R.paraphrase_table(_scores(rows)).set_index("task")
-    assert t.loc["harm", "pct_within_1"] == 50.0 and t.loc["harm", "pct_identical"] == 0.0
+    assert t.loc["term_explanation", "pct_within_1"] == 50.0 and t.loc["term_explanation", "pct_identical"] == 0.0
 
 
 def test_build_report_runs_end_to_end_without_bert_or_clean():
-    rows = [_llm("complexity", "himed", "low", "i1", 2), _llm("harm", "himed", "low", "i1", 5)]
+    rows = [_llm("complexity", "himed", "low", "i1", 2), _llm("term_explanation", "himed", "low", "i1", 5)]
     text, tables = R.build_report(_scores(rows), clean=None, bert_dir=None, suspect=None)
     assert "## A." in text and "## C." in text and "judge_llm" in tables
 
@@ -126,3 +121,22 @@ def test_topic_table_uses_pooled_health_set():
              "label": "grade5", "score": 1, "judge_error": ""} for k in range(3)]
     t = R.topic_table(_scores(rows)).set_index("texts")
     assert t.loc["NCERT Class 5, health-related (all splits)", "n"] == 3
+
+
+def test_build_report_on_a_partial_run_without_corpus_columns():
+    # pilot: only LLM + controlled jobs, so collect's CSV has no label/rating/health/n_words columns
+    rows = [_llm("complexity", "himed", "low", "i1", 2),
+            {"job_id": "reference_agreement|controlled:positive|i1", "task": "reference_agreement",
+             "set": "controlled", "case": "positive", "score": 5, "judge_error": ""}]
+    df = pd.DataFrame(rows)
+    df["score"] = df["score"].astype("Int64")
+    df["set"] = df["set"].fillna("")
+    text, _ = R.build_report(df, clean=None, bert_dir=None, suspect=None)
+    assert "### B6. Controlled cases" in text
+
+
+def test_report_has_no_harm_section_or_column():
+    rows = [_llm("reference_agreement", "himed", "low", f"i{k}", 5) for k in range(10)]
+    text, tables = R.build_report(_scores(rows), clean=None, bert_dir=None, suspect=None)
+    assert "harm" not in text.lower() and "judge_harm" not in tables
+    assert not any("harm" in c for c in tables["judge_llm"].columns)

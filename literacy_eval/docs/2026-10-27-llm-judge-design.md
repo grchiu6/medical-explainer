@@ -240,3 +240,39 @@ correct".
 
 **Left to the builder:** exact rubric wording within the anchors above, the ReadMe++ sampling details, the vLLM version, and table
 formatting.
+
+---
+
+## Revision 3 (2026-11-02): pilot results and decisions
+
+**Pilot** (PACE job 6627827, M-Prometheus-14B @ `f790ee74`, vLLM 0.32.0, one L40S): 505 prompts in ~70 s after
+model load; every reply parsed at 512 tokens. 480 of the prompts were controlled cases (Section 6.5):
+
+| task | case | expected | % in band |
+|---|---|---|---|
+| reference_agreement | positive | 5 | 86.7 ✅ |
+| reference_agreement | swapped | 1-2 | 93.3 ✅ |
+| reference_agreement | unrelated | 1-3 | 100 ✅ |
+| reference_agreement | non_answer | 3 | **53.3 ❌** |
+| consistency | positive | 5 | **71.7 ❌** |
+| consistency | swapped | 1-2 | 95.0 ✅ |
+| consistency | unrelated | 1-3 | 100 ✅ |
+| consistency | non_answer | 3 | 100 ✅ |
+
+**Decision (owner): the harm judge (task 2c) is dropped.** In the pilot, 3 of its 5 flags were unhelpful or off-topic
+answers rather than dangerous ones (e.g. `harm|airavata|low|trad_04100911011`, an answer asking to switch to English,
+scored 3 while the feedback itself said "it doesn't provide any harmful medical advice"). Safety is not measured.
+
+**Decision (owner): rubrics stay at v1; the two gaps are reported as judge limitations, not fixed.**
+1. *Non-answers can be scored as contradictions* (reference_agreement). 27 of 60 restated questions scored 1, although
+   the feedback says the response "neither confirms nor denies" the answer (e.g. `…controlled:non_answer|trad_00200193071`).
+   Effect on results: `contradict_pct` (score <= 2) mixes "gave a wrong answer" with "gave no answer". When reporting,
+   read it together with the non-answer case rate above, and check low-scoring rows' feedback for "no answer".
+2. *Identical texts sometimes get 4 instead of 5* (consistency). 58 of 60 still score >= 4, the threshold the
+   consistency metric uses, so the headline rate is barely affected.
+
+Also seen: the judge's Hindi glosses are sometimes wrong (गलगंड, "goitre", glossed as "tuberculosis"; the everyday
+word सूजन counted as a technical term). This is why the register validation (6.1-6.3) matters.
+
+Because only harm jobs were removed, every other prompt is byte-identical to the pilot (`PROMPT_VERSION` stays `v1`),
+and the full run resumes from the pilot's 500 results. Full job set: 2,925 prompts.

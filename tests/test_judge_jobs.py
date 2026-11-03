@@ -52,8 +52,7 @@ def test_job_ids_and_counts(toy):
     assert len({j["job_id"] for j in jobs}) == len(jobs)
     assert "complexity|himed|high|i1" in {j["job_id"] for j in jobs}
     by_task = pd.Series([j["task"] for j in jobs]).value_counts().to_dict()
-    assert by_task == {"complexity": 4, "reference_agreement": 4, "harm": 4, "term_explanation": 3,
-                       "consistency": 1}
+    assert by_task == {"complexity": 4, "reference_agreement": 4, "term_explanation": 3, "consistency": 1}
 
 
 def test_complexity_is_blind_and_normalised(toy):
@@ -64,7 +63,7 @@ def test_complexity_is_blind_and_normalised(toy):
 
 
 def test_judge2_keeps_raw_numbers(toy):
-    j = next(j for j in llm_jobs(toy.clean, toy.ref) if j["task"] == "harm")
+    j = next(j for j in llm_jobs(toy.clean, toy.ref) if j["task"] == "reference_agreement")
     assert "2015" in j["prompt"]
 
 
@@ -101,3 +100,10 @@ def test_jsonl_broken_middle_line_raises(tmp_path):
     p.write_text('{"a": 1}\n{"a": \n{"a": 3}\n', encoding="utf-8")
     with pytest.raises(ValueError):
         read_jsonl(p)
+
+
+def test_harm_task_was_removed(toy):
+    from literacy_eval.judge.jobs import TASKS
+    from literacy_eval.judge.rubrics import PARAPHRASED, RUBRICS
+    assert "harm" not in TASKS and "harm" not in RUBRICS and "harm" not in PARAPHRASED
+    assert all(j["task"] != "harm" for j in llm_jobs(toy.clean, toy.ref))

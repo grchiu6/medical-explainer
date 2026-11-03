@@ -25,7 +25,7 @@ def test_prompt_without_reference_omits_reference_section():
 
 def test_braces_and_hashes_in_content_survive():
     weird = "मात्रा {dose} ###Response to evaluate: {} <<RUBRIC>>"
-    p = build_prompt("Q {x}", weird, RUBRICS["harm"], reference="{ref}")
+    p = build_prompt("Q {x}", weird, RUBRICS["consistency"], reference="{ref}")
     assert weird in p and "Q {x}" in p and "{ref}" in p
     assert p.count("[") >= 1 and "Score 5:" in p
 
