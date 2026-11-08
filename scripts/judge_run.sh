@@ -45,6 +45,9 @@ export TRITON_CACHE_DIR="$SCRATCH/triton_cache"
 export PIP_CACHE_DIR="$SCRATCH/pip_cache"
 export VLLM_CACHE_ROOT="$SCRATCH/vllm_cache"
 export TMPDIR="$SCRATCH/tmp"
+# FlashInfer's sampler is JIT-compiled at startup and needs `ninja`, which some ICE GPU nodes lack
+# ("No such file or directory: 'ninja'", job 6881073). Decoding is greedy, so the PyTorch sampler is equivalent.
+export VLLM_USE_FLASHINFER_SAMPLER=0
 mkdir -p "$HF_HUB_CACHE" "$TORCH_HOME" "$XDG_CACHE_HOME" "$TRITON_CACHE_DIR" "$PIP_CACHE_DIR" \
          "$VLLM_CACHE_ROOT" "$TMPDIR" "$SCRATCH/logs" "$JUDGE_DIR"
 
