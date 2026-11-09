@@ -1,0 +1,5 @@
+check,n,value
+corpus:test accuracy (judge),135,0.741
+corpus:test quadratic kappa (judge),135,0.785
+corpus:test accuracy (BERT),135,0.985
+ReadMe++ spearman (judge),300,0.645

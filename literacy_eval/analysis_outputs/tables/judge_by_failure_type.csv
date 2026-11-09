@@ -1,0 +1,29 @@
+task,failure_type,n,mean_score,pct_ge4
+complexity,degenerate,145,1.86,20.0
+complexity,echo,100,2.67,39.0
+complexity,non_answer,2,1.0,0.0
+complexity,non_hindi,10,1.3,10.0
+complexity,ok (rule-usable),356,2.81,41.6
+complexity,refusal,15,1.33,6.7
+complexity,too_short,2,1.0,0.0
+consistency,degenerate,96,1.55,0.0
+consistency,echo,71,2.8,22.5
+consistency,non_answer,2,2.0,0.0
+consistency,non_hindi,3,1.0,0.0
+consistency,ok (rule-usable),235,1.71,5.1
+consistency,refusal,11,2.45,0.0
+consistency,too_short,2,1.5,0.0
+reference_agreement,degenerate,145,1.06,0.0
+reference_agreement,echo,100,1.7,0.0
+reference_agreement,non_answer,2,1.0,0.0
+reference_agreement,non_hindi,10,1.1,0.0
+reference_agreement,ok (rule-usable),356,1.66,11.5
+reference_agreement,refusal,15,1.2,0.0
+reference_agreement,too_short,2,1.5,0.0
+term_explanation,degenerate,96,1.21,0.0
+term_explanation,echo,71,1.45,9.9
+term_explanation,non_answer,2,1.0,0.0
+term_explanation,non_hindi,3,1.0,0.0
+term_explanation,ok (rule-usable),235,2.67,29.8
+term_explanation,refusal,11,2.45,36.4
+term_explanation,too_short,2,1.0,0.0
