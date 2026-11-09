@@ -107,8 +107,10 @@ def analyze(sheet: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """Weighted (= estimate for the whole run) and raw summaries of a filled-in sheet."""
     d = sheet[sheet["score_verdict"].astype(str).str.strip() != ""].copy()
     d["weight"] = d["weight"].astype(float)
-    for c in ("score_verdict", "feedback_faithful", "judge_error", "answer_error"):
+    for c in ("score_verdict", "feedback_faithful"):
         d[c] = d[c].astype(str).str.strip().str.lower()
+    for c in ("judge_error", "answer_error"):     # cells may read "J1 – misread ..."; keep the code only
+        d[c] = d[c].astype(str).str.strip().str.extract(r"^([JjAa]\d)", expand=False).str.upper().fillna("")
 
     def wshare(col: str) -> pd.DataFrame:
         """Weighted % per task: an estimate of the share in the whole run, not just the sample."""

@@ -38,7 +38,8 @@ def test_review_sheet_formulas_point_at_their_hindi_cell():
 def test_analyze_reweights_to_the_population():
     sheet = pd.DataFrame({"task": ["t", "t"], "model": ["a", "b"], "score": ["1", "5"], "weight": ["9", "1"],
                           "score_verdict": ["too_low", "correct"], "feedback_faithful": ["y", "y"],
-                          "judge_error": ["J2", "J0"], "answer_error": ["A1", "A0"], "human_score": ["2", "5"]})
+                          "judge_error": ["J2 – right diagnosis, wrong band", "j2"], "answer_error": ["A1", "A0 – fine"], "human_score": ["2", "5"]})
     out = E.analyze(sheet)
     assert out["verdict_by_task"].loc["t", "too_low"] == 90.0
     assert out["score_agreement_by_task"].loc["t", "exact"] == 50.0
+    assert E.analyze(sheet)["judge_error_counts"].loc["J2", "All"] == 2       # code with or without meaning
