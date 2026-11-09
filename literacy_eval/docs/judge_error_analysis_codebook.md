@@ -81,6 +81,26 @@ Use `unsure` and a note when you cannot tell (e.g. translation unclear); these a
 
 For complexity / term_explanation rows, A0 vs A8 is the main call; the medical codes still apply if obvious.
 
+### 3c. Decision rules (fixed during the AI-drafted pass, 2026-11-09)
+
+- **J0 = the score is right.** `judge_error` names the cause of a *wrong* score. When the score is right but
+  the explanation is flawed, it is still J0 and the flaw goes in `feedback_faithful` (partly / n).
+- **reference_agreement bands:** 1 = a different specific answer; 2 = off-topic text, prompt echo, or the
+  reference answer mixed with a contradicting claim; 3 = on-topic generic advice or a loop naming no answer.
+- **consistency:** if either answer is an echo / loop / non-answer, there is no comparable claim -> 3.
+  A 3 from this rule means "not measurable", not "medium agreement".
+- **term_explanation:** the rubric is applied literally: a non-answer with no technical terms gets 5. This is a
+  rubric gap (a refusal can earn the top score); report such rows separately.
+
+### 3d. How the current labels were made
+
+The sheet was filled by AI agents, not by a person: one agent per task drafted all 25 rows (reading the
+Hindi directly), a second agent checked every row independently (`checker_agreed`, `checker_note`), and
+disagreements were settled by applying the checker's evidence-backed correction (`adjudication`).
+`review_source` says this on every row. It is a draft for human verification: report it as "AI-assisted
+error analysis, human-verified on N rows", and start verification with low-`confidence` and
+`checker_agreed = no` rows.
+
 ## 4. Analysis
 
 `python -m literacy_eval.judge.error_sample --analyze` prints:
