@@ -182,3 +182,17 @@ def test_report_states_what_is_in_and_out_of_the_evaluation():
     text, tables = R.build_report(_scores(rows), clean=clean, bert_dir=None, suspect={"i9"})
     assert "Excluded dataset items" in text and "i9" in text
     assert "Generation failures" in text and "judge_by_failure_type" in tables
+
+
+def test_mean_scores_per_task_model_level():
+    llm = pd.DataFrame({
+        "task": ["consistency", "consistency", "consistency", "complexity"],
+        "model": ["himed"] * 4, "level": ["low", "low", "mid", "high"],
+        "item_id": ["a", "b", "a", "a"], "score": pd.array([2, 4, 5, 3], dtype="Int64")})
+    m = R.mean_scores(llm)
+    low = m[(m.task == "consistency") & (m.level == "low")].iloc[0]
+    assert (low["n"], low["mean"]) == (2, 3.0)
+    assert list(m["task"]) == ["complexity", "consistency", "consistency"]   # fixed task order
+    w = R.mean_scores_wide(m)
+    assert w.loc[("himed", "mid"), "consistency"] == 5.0
+    assert np.isnan(w.loc[("himed", "high"), "consistency"])

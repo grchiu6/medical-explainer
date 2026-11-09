@@ -289,6 +289,34 @@ def by_failure_type(llm: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index()
 
 
+TASK_ORDER = ["complexity", "term_explanation", "reference_agreement", "consistency"]
+
+
+def mean_scores(llm: pd.DataFrame) -> pd.DataFrame:
+    """Mean judge score (1-5) per task x model x level, with n, SD and a 95% normal CI.
+
+    term_explanation and consistency exist only at low/mid (consistency = that level vs the same model's high).
+    """
+    g = llm.assign(score=llm["score"].astype(float)).groupby(["task", "model", "level"])["score"]
+    out = pd.DataFrame({"n": g.size(), "mean": g.mean(), "sd": g.std()}).reset_index()
+    half = 1.96 * out["sd"] / np.sqrt(out["n"])
+    out["ci_low"], out["ci_high"] = (out["mean"] - half).clip(lower=1), (out["mean"] + half).clip(upper=5)
+    out["task"] = pd.Categorical(out["task"], TASK_ORDER, ordered=True)
+    out["model"] = pd.Categorical(out["model"], MODELS, ordered=True)
+    out["level"] = pd.Categorical(out["level"], LEVELS, ordered=True)
+    out = out.sort_values(["task", "model", "level"]).reset_index(drop=True)
+    out[["mean", "sd", "ci_low", "ci_high"]] = out[["mean", "sd", "ci_low", "ci_high"]].round(2)
+    return out.astype({"task": str, "model": str, "level": str})
+
+
+def mean_scores_wide(means: pd.DataFrame) -> pd.DataFrame:
+    """One row per model x level, one column per task (mean score); '' where a task does not apply."""
+    w = means.pivot_table(index=["model", "level"], columns="task", values="mean", aggfunc="first")
+    w = w.reindex(columns=[t for t in TASK_ORDER if t in w.columns])
+    idx = pd.MultiIndex.from_product([MODELS, LEVELS], names=["model", "level"])
+    return w.reindex(idx).dropna(how="all")
+
+
 def _wide(llm: pd.DataFrame, model: str) -> pd.DataFrame:
     c = llm[(llm["task"] == "complexity") & (llm["model"] == model)]
     return c.pivot_table(index="item_id", columns="level", values="score", aggfunc="first").reindex(columns=LEVELS)
@@ -423,7 +451,9 @@ def build_report(scores: pd.DataFrame, clean: pd.DataFrame | None, bert_dir: Pat
     failure_t = by_failure_type(llm)
     paired = paired_tests(llm)
     fig = figure_data(llm, bert)
-    tables.update(judge_llm=main_t, judge_paired=paired, judge_figure_data=fig, judge_by_failure_type=failure_t)
+    means = mean_scores(llm)
+    tables.update(judge_llm=main_t, judge_paired=paired, judge_figure_data=fig, judge_by_failure_type=failure_t,
+                  judge_mean_scores=means)
     L += ["## C. LLM outputs", ""]
     fails = generation_failures(clean, suspect)
     judged = llm[llm["task"] == "complexity"].get("failure_type", pd.Series(dtype=str)).fillna("ok")
@@ -447,6 +477,12 @@ def build_report(scores: pd.DataFrame, clean: pd.DataFrame | None, bert_dir: Pat
           "Rule-usable answers vs each kind of poor response, per judge task. Poor responses are part of the "
           "primary metrics; this table shows how much they pull them down.", "",
           md(failure_t.set_index(["task", "failure_type"])) if len(failure_t) else "*No LLM rows scored yet.*", ""]
+    L += ["### C1c. Mean judge score per task, model and level", "",
+          "Mean of the 1-5 judge scores over the primary set (invalid items excluded, poor responses included). "
+          "Higher is: more complex (complexity), better explained (term_explanation), closer to the reference "
+          "(reference_agreement), same claim as the model's own high answer (consistency). term_explanation and "
+          "consistency are only scored at low/mid. n, SD and 95% CI are in `tables/judge_mean_scores.csv`.", "",
+          md(mean_scores_wide(means)) if len(means) else "*No LLM rows scored yet.*", ""]
     L += ["### C2. Paired tests on complexity (low < mid < high)", "",
           "Page's L over items scored at all 3 levels; Wilcoxon low vs high; Holm across models. "
           f"Fewer than {S.MIN_PAIRED_N} items: 'n too small'.", "",

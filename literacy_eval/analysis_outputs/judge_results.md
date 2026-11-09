@@ -191,6 +191,28 @@ Rule-usable answers vs each kind of poor response, per judge task. Poor response
 | term_explanation | refusal | 11 | 2.45 | 36.4 |
 | term_explanation | too_short | 2 | 1.0 | 0.0 |
 
+### C1c. Mean judge score per task, model and level
+
+Mean of the 1-5 judge scores over the primary set (invalid items excluded, poor responses included). Higher is: more complex (complexity), better explained (term_explanation), closer to the reference (reference_agreement), same claim as the model's own high answer (consistency). term_explanation and consistency are only scored at low/mid. n, SD and 95% CI are in `tables/judge_mean_scores.csv`.
+
+| model | level | complexity | term_explanation | reference_agreement | consistency |
+| --- | --- | --- | --- | --- | --- |
+| airavata | low | 1.83 | 1.31 | 1.52 | 2.67 |
+| airavata | mid | 2.45 | 1.57 | 1.57 | 2.6 |
+| airavata | high | 3.07 |  | 1.76 |  |
+| apollo | low | 1.57 | 1.76 | 1.21 | 2.05 |
+| apollo | mid | 1.81 | 1.57 | 1.33 | 1.71 |
+| apollo | high | 2.79 |  | 1.14 |  |
+| himed | low | 1.14 | 2.12 | 1.52 | 1.81 |
+| himed | mid | 2.4 | 2.21 | 1.69 | 1.45 |
+| himed | high | 3.48 |  | 2.19 |  |
+| nanda | low | 2.9 | 3.76 | 1.71 | 2.1 |
+| nanda | mid | 4.21 | 4.0 | 2.02 | 1.98 |
+| nanda | high | 4.24 |  | 1.76 |  |
+| mmed_llama | low | 1.69 | 1.26 | 1.02 | 1.1 |
+| mmed_llama | mid | 2.07 | 1.4 | 1.02 | 1.31 |
+| mmed_llama | high | 1.76 |  | 1.05 |  |
+
 ### C2. Paired tests on complexity (low < mid < high)
 
 Page's L over items scored at all 3 levels; Wilcoxon low vs high; Holm across models. Fewer than 10 items: 'n too small'.
