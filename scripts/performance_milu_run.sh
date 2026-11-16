@@ -10,13 +10,25 @@
 #     # C0 baseline
 #     sbatch scripts/performance_milu_run.sh himed c0_baseline
 #     sbatch scripts/performance_milu_run.sh nanda c0_baseline
-#     # C2 chain-of-thought. 768 is a STARTING POINT: check it against the
-#     # output lengths seen in the smoke test / C0 before relying on it.
-#     sbatch scripts/performance_milu_run.sh himed c2_cot --use-cot --max-new-tokens 768
+#     # C2 chain-of-thought. HiMed thinks at length ("## Thinking ... ## Response"),
+#     # so it gets 2048; Nanda starts at 768. Confirm from the smoke-test output
+#     # lengths; truncated reasoning shows up as a high no-marker rate in results.
+#     sbatch scripts/performance_milu_run.sh himed c2_cot --use-cot --max-new-tokens 2048
 #     sbatch scripts/performance_milu_run.sh nanda c2_cot --use-cot --max-new-tokens 768
+#     # C3 few-shot. Add --use-cot (and its --max-new-tokens) ONLY if C2 was kept.
+#     sbatch scripts/performance_milu_run.sh himed c3_fewshot --use-fewshot
+#     sbatch scripts/performance_milu_run.sh himed c3_fewshot_cot --use-fewshot --use-cot --max-new-tokens 2048
+#     # C4 decoding (on top of the kept conditions' flags). Use a new label per setting;
+#     # vary --gen-seed (never --seed) to measure the sampling noise floor.
+#     sbatch scripts/performance_milu_run.sh himed c4_t0.7_rp1.1_g1 --sample-decoding --temperature 0.7 --repetition-penalty 1.1 --gen-seed 1
+#     sbatch scripts/performance_milu_run.sh himed c4_t0.7_rp1.1_g2 --sample-decoding --temperature 0.7 --repetition-penalty 1.1 --gen-seed 2
+#     # Position-bias check: shuffled option order, under its own condition label.
+#     sbatch scripts/performance_milu_run.sh himed c0_shuffled --shuffle-options
 #
-# Then compare conditions:
-#     python -m performance_eval.analyze --model himed --ladder c0_baseline:first_letter c2_cot:after_marker --raw-dir /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med
+# Then compare conditions. The analyze mode must match the condition:
+# first_letter for non-CoT conditions, after_marker for CoT conditions.
+# --family-size is the pre-registered Bonferroni m (default 3: C2, C3, C4 per model).
+#     python -m performance_eval.analyze --model himed --family-size 3 --ladder c0_baseline:first_letter c2_cot:after_marker --raw-dir /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med
 #
 # HUGGING FACE AUTH (MILU is gated): before the first run, do ONE of
 #     HF_HOME=/home/hice1/gchiu6/scratch/hf_cache huggingface-cli login   # once, on PACE
@@ -28,7 +40,7 @@
 #
 # RESUME SUPPORT: if killed, re-run the same sbatch command; the runner skips
 # item_ids already present in the output CSV.
-# WARNING: Resume skips item_ids already in the CSV. If you change ANY flag for a condition, use a new --condition label or delete that CSV first.
+# WARNING: Resume skips item_ids already in the CSV. If you change ANY flag for a condition, use a new --condition label or delete that CSV (and its .config.json) first; run.py refuses to resume under a different config.
 #
 # Requested wall time: 4 hours; adjust after the smoke test gives real timing.
 
@@ -65,6 +77,10 @@ if [[ "$MODEL" != "himed" && "$MODEL" != "nanda" ]]; then
 fi
 if [[ "$CONDITION" == --* ]]; then
     echo "ERROR: condition label expected as 2nd argument, got flag '$CONDITION'"
+    exit 1
+fi
+if [[ ! "$CONDITION" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    echo "ERROR: condition label must match ^[A-Za-z0-9_.-]+\$ (it becomes part of the output filename), got '$CONDITION'"
     exit 1
 fi
 shift 2   # remaining args are forwarded verbatim to performance_eval.run

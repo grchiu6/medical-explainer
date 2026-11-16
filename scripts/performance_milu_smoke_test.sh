@@ -53,6 +53,10 @@ if [[ "$CONDITION" == --* ]]; then
     echo "ERROR: condition label expected as 2nd argument, got flag '$CONDITION'"
     exit 1
 fi
+if [[ ! "$CONDITION" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    echo "ERROR: condition label must match ^[A-Za-z0-9_.-]+\$ (it becomes part of the output filename), got '$CONDITION'"
+    exit 1
+fi
 shift 2   # remaining args are forwarded verbatim to performance_eval.run
 
 SCRATCH="/home/hice1/gchiu6/scratch"
