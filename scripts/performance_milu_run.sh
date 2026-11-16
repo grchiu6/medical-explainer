@@ -19,7 +19,7 @@
 #     python -m performance_eval.analyze --model himed --ladder c0_baseline:first_letter c2_cot:after_marker --raw-dir /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med
 #
 # HUGGING FACE AUTH (MILU is gated): before the first run, do ONE of
-#     huggingface-cli login        # once, on PACE
+#     HF_HOME=/home/hice1/gchiu6/scratch/hf_cache huggingface-cli login   # once, on PACE
 #     export HF_TOKEN=...          # in your shell before sbatch
 # The script only checks that credentials exist; it never prints the token.
 #
@@ -28,6 +28,7 @@
 #
 # RESUME SUPPORT: if killed, re-run the same sbatch command; the runner skips
 # item_ids already present in the output CSV.
+# WARNING: Resume skips item_ids already in the CSV. If you change ANY flag for a condition, use a new --condition label or delete that CSV first.
 #
 # Requested wall time: 4 hours; adjust after the smoke test gives real timing.
 
@@ -99,9 +100,12 @@ mkdir -p "$HF_HOME" "$TRITON_CACHE_DIR" "$PIP_CACHE_DIR"
 
 # MILU is gated: fail fast if no HF credentials. Existence check only; the
 # token is never read or printed.
-if [ -z "${HF_TOKEN:-}" ] && [ ! -f "$HF_HOME/token" ] && [ ! -f "$HOME/.cache/huggingface/token" ]; then
+# Only HF_TOKEN or $HF_HOME/token count: HF_HOME is overridden above, so
+# ~/.cache/huggingface/token would NOT be read by the job.
+if [ -z "${HF_TOKEN:-}" ] && [ ! -f "$HF_HOME/token" ]; then
     echo "ERROR: no Hugging Face credentials found (MILU is a gated dataset)."
-    echo "       Run 'huggingface-cli login' once on PACE, or export HF_TOKEN, then resubmit."
+    echo "       Run once on PACE: HF_HOME=/home/hice1/gchiu6/scratch/hf_cache huggingface-cli login"
+    echo "       (or export HF_TOKEN=...), then resubmit."
     exit 1
 fi
 

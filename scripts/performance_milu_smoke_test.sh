@@ -11,11 +11,11 @@
 #     sbatch scripts/performance_milu_smoke_test.sh nanda c2_cot --use-cot --max-new-tokens 768
 #
 # HUGGING FACE AUTH (MILU is gated): before the first run, do ONE of
-#     huggingface-cli login        # once, on PACE
+#     HF_HOME=/home/hice1/gchiu6/scratch/hf_cache huggingface-cli login   # once, on PACE
 #     export HF_TOKEN=...          # in your shell before sbatch
 # The script only checks that credentials exist; it never prints the token.
 #
-# Output CSV: /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/<model>_<condition>_raw.csv
+# Output CSV: /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med_smoke/<model>_<condition>_raw.csv
 # Logs:       /home/hice1/gchiu6/scratch/logs/perf-milu-smoke-*.out / .err
 
 # ---------- SLURM resource requests ----------
@@ -56,7 +56,7 @@ fi
 shift 2   # remaining args are forwarded verbatim to performance_eval.run
 
 SCRATCH="/home/hice1/gchiu6/scratch"
-OUTPUT_DIR="$SCRATCH/performance_eval_outputs/milu_hi_med"
+OUTPUT_DIR="$SCRATCH/performance_eval_outputs/milu_hi_med_smoke"
 LOGS_DIR="$SCRATCH/logs"
 
 mkdir -p "$OUTPUT_DIR" "$LOGS_DIR"
@@ -87,9 +87,12 @@ mkdir -p "$HF_HOME" "$TRITON_CACHE_DIR" "$PIP_CACHE_DIR"
 
 # MILU is gated: fail fast if no HF credentials. Existence check only; the
 # token is never read or printed.
-if [ -z "${HF_TOKEN:-}" ] && [ ! -f "$HF_HOME/token" ] && [ ! -f "$HOME/.cache/huggingface/token" ]; then
+# Only HF_TOKEN or $HF_HOME/token count: HF_HOME is overridden above, so
+# ~/.cache/huggingface/token would NOT be read by the job.
+if [ -z "${HF_TOKEN:-}" ] && [ ! -f "$HF_HOME/token" ]; then
     echo "ERROR: no Hugging Face credentials found (MILU is a gated dataset)."
-    echo "       Run 'huggingface-cli login' once on PACE, or export HF_TOKEN, then resubmit."
+    echo "       Run once on PACE: HF_HOME=/home/hice1/gchiu6/scratch/hf_cache huggingface-cli login"
+    echo "       (or export HF_TOKEN=...), then resubmit."
     exit 1
 fi
 
@@ -99,6 +102,8 @@ python -c "import torch; print('PyTorch:', torch.__version__)"
 echo ""
 
 # ---------- SMOKE TEST ----------
+# Always regenerate: delete any earlier smoke CSV so resume cannot skip the model.
+rm -f "$OUT_CSV"
 python -m performance_eval.run \
     --model "$MODEL" \
     --condition "$CONDITION" \
