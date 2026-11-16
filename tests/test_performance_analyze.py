@@ -162,3 +162,26 @@ def test_main_bad_mode_exits(tmp_path):
     with pytest.raises(SystemExit):
         main(["--model", "m1", "--raw-dir", str(tmp_path), "--out-dir", str(tmp_path),
               "--ladder", "c0:bogus"])
+
+
+# ---- I6 / R24: no_marker_rate ----
+
+def test_accuracy_summary_no_marker_rate_for_after_marker_only():
+    rows = [
+        {"item_id": "a", "is_correct": True, "parsed_letter": "A", "marker_found": True},
+        {"item_id": "b", "is_correct": False, "parsed_letter": "B", "marker_found": False},
+        {"item_id": "c", "is_correct": False, "parsed_letter": None, "marker_found": False},
+        {"item_id": "d", "is_correct": True, "parsed_letter": "D", "marker_found": True},
+    ]
+    assert accuracy_summary(rows, mode="after_marker")["no_marker_rate"] == 0.5
+    assert accuracy_summary(rows, mode="first_letter")["no_marker_rate"] is None
+    assert accuracy_summary(rows)["no_marker_rate"] is None
+
+
+def test_scored_csv_includes_marker_found_as_1_0(tmp_path):
+    from performance_eval.analyze import score_raw_csv
+
+    raw = tmp_path / "m1_c2_raw.csv"
+    _write_raw(raw, ["Answer: A", "विकल्प B", "Answer: C", "x"])
+    score_raw_csv(raw, "after_marker", tmp_path / "scored.csv")
+    assert [r["marker_found"] for r in _read(tmp_path / "scored.csv")] == ["1", "0", "1", "0"]

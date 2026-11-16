@@ -24,7 +24,9 @@ MODES = ("first_letter", "after_marker")
 _OPTION_LINE_RE = re.compile(r"^[A-J]\. ", re.MULTILINE)
 
 
-def accuracy_summary(scored_rows: list[dict]) -> dict:
+def accuracy_summary(scored_rows: list[dict], mode: str | None = None) -> dict:
+    """no_marker_rate (rows whose CoT answer had no explicit marker) is only
+    meaningful for after_marker entries; it is None otherwise."""
     n = len(scored_rows)
     n_correct = sum(bool(r["is_correct"]) for r in scored_rows)
     none_rate = (sum(r["parsed_letter"] is None for r in scored_rows) / n) if n else float("nan")
@@ -36,6 +38,8 @@ def accuracy_summary(scored_rows: list[dict]) -> dict:
         "ci_low": ci_low,
         "ci_high": ci_high,
         "none_rate": none_rate,
+        "no_marker_rate": (sum(not r["marker_found"] for r in scored_rows) / n)
+        if mode == "after_marker" and n else None,
     }
 
 
@@ -147,7 +151,7 @@ def score_raw_csv(raw_path: Path, mode: str, scored_path: Path) -> list[dict]:
         fieldnames = list(reader.fieldnames or [])
         rows = list(reader)
     scored = score_rows(rows, mode)
-    out_fields = fieldnames + [c for c in ("parsed_letter", "is_correct") if c not in fieldnames]
+    out_fields = fieldnames + [c for c in ("parsed_letter", "marker_found", "is_correct") if c not in fieldnames]
     scored_path = Path(scored_path)
     scored_path.parent.mkdir(parents=True, exist_ok=True)
     with open(scored_path, "w", newline="", encoding="utf-8") as f:
@@ -156,6 +160,7 @@ def score_raw_csv(raw_path: Path, mode: str, scored_path: Path) -> list[dict]:
         for r in scored:
             w.writerow({**r,
                         "parsed_letter": r["parsed_letter"] or "",
+                        "marker_found": int(r["marker_found"]),
                         "is_correct": int(r["is_correct"])})
     return scored
 
@@ -185,7 +190,7 @@ def main(argv: list[str] | None = None) -> None:
         first_rows = scored if first_rows is None else first_rows
         ladder.append({
             "condition": cond,
-            "summary": accuracy_summary(scored),
+            "summary": accuracy_summary(scored, mode),
             "comparison": None if prev_rows is None else compare_conditions(prev_rows, scored),
         })
         prev_rows = scored
