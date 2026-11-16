@@ -5,7 +5,7 @@ import pytest
 from performance_eval import run as run_mod
 from performance_eval.run import build_gen_kwargs, run_condition, validate_args
 
-GREEDY = {"do_sample": False, "temperature": None, "top_p": None}
+GREEDY = {"do_sample": False, "temperature": None, "top_p": None, "repetition_penalty": 1.0}
 
 
 def test_run_condition_writes_one_row_per_item(tmp_path):
@@ -101,6 +101,7 @@ def fakes(monkeypatch):
     monkeypatch.setattr(run_mod, "load_milu_hindi_medicine", lambda hf_token=None: _fake_items())
     monkeypatch.setattr(run_mod, "_load_model_fn", lambda name: fake_get_answer)
     monkeypatch.setattr(run_mod, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr(run_mod, "_set_seed", lambda seed: rec.setdefault("seeds", []).append(seed))
     return rec
 
 
@@ -193,3 +194,86 @@ def test_main_rejects_temperature_without_sample_decoding(tmp_path, fakes):
     with pytest.raises(SystemExit):
         run_mod.main(["--model", "himed", "--condition", "c", "--temperature", "0.5",
                       "--output-dir", str(tmp_path)])
+
+
+# ---- I4 / R22: greedy neutralizes repetition penalty ----
+
+def test_build_gen_kwargs_greedy_sets_repetition_penalty_1_and_override_wins():
+    assert build_gen_kwargs(False)["repetition_penalty"] == 1.0
+    assert build_gen_kwargs(False, repetition_penalty=1.3)["repetition_penalty"] == 1.3
+    assert "repetition_penalty" not in build_gen_kwargs(True)
+
+
+# ---- I1 / R19: --gen-seed is separate from the data --seed ----
+
+def test_gen_seed_feeds_set_seed_only(tmp_path, fakes):
+    run_mod.main(["--model", "himed", "--condition", "a", "--output-dir", str(tmp_path)])
+    run_mod.main(["--model", "himed", "--condition", "b", "--gen-seed", "7", "--seed", "42",
+                  "--output-dir", str(tmp_path)])
+    assert fakes["seeds"] == [42, 7]
+
+
+def test_gen_seed_leaves_test_items_and_exemplars_unchanged(tmp_path, fakes, monkeypatch):
+    items = _real_items()
+    monkeypatch.setattr(run_mod, "load_milu_hindi_medicine", lambda hf_token=None: items)
+    common = ["--model", "himed", "--use-fewshot", "--shuffle-options", "--fewshot-n", "6",
+              "--output-dir", str(tmp_path)]
+    run_mod.main(common + ["--condition", "g1", "--gen-seed", "1"])
+    prompts_1 = list(fakes["prompts"])
+    fakes["prompts"].clear()
+    run_mod.main(common + ["--condition", "g2", "--gen-seed", "2"])
+    assert fakes["prompts"] == prompts_1
+    rows_1 = list(csv.DictReader(open(tmp_path / "himed_g1_raw.csv", encoding="utf-8")))
+    rows_2 = list(csv.DictReader(open(tmp_path / "himed_g2_raw.csv", encoding="utf-8")))
+    strip = lambda rows: [(r["item_id"], r["question_with_options"], r["reference_answer"]) for r in rows]
+    assert strip(rows_1) == strip(rows_2)
+
+
+# ---- I3 / R21: config sidecar guards resume ----
+
+def test_main_writes_config_sidecar(tmp_path, fakes):
+    import json
+
+    run_mod.main(["--model", "himed", "--condition", "c", "--use-fewshot", "--fewshot-n", "6",
+                  "--max-new-tokens", "64", "--output-dir", str(tmp_path)])
+    cfg = json.loads((tmp_path / "himed_c_raw.csv.config.json").read_text(encoding="utf-8"))
+    assert cfg["model"] == "himed" and cfg["condition"] == "c"
+    assert cfg["use_cot"] is False and cfg["use_fewshot"] is True and cfg["fewshot_n"] == 6
+    assert cfg["gen_kwargs"] == {**GREEDY, "max_new_tokens": 64}
+    assert cfg["seed"] == 42 and cfg["gen_seed"] == 42
+    assert cfg["shuffle_options"] is False and cfg["limit"] is None
+    assert len(cfg["exemplar_ids"]) == 3
+
+
+def test_main_sidecar_exemplar_ids_empty_without_fewshot(tmp_path, fakes):
+    import json
+
+    run_mod.main(["--model", "himed", "--condition", "c", "--output-dir", str(tmp_path)])
+    cfg = json.loads((tmp_path / "himed_c_raw.csv.config.json").read_text(encoding="utf-8"))
+    assert cfg["exemplar_ids"] == []
+
+
+def test_main_resume_with_same_config_proceeds(tmp_path, fakes):
+    args = ["--model", "himed", "--condition", "c", "--output-dir", str(tmp_path)]
+    run_mod.main(args + ["--limit", "2"])
+    run_mod.main(args)  # limit is exempt; everything else matches
+    rows = list(csv.DictReader(open(tmp_path / "himed_c_raw.csv", encoding="utf-8")))
+    assert len(rows) == 2  # 12 items - 10 pool
+
+
+def test_main_resume_with_different_max_new_tokens_refuses(tmp_path, fakes):
+    args = ["--model", "himed", "--condition", "c", "--output-dir", str(tmp_path)]
+    run_mod.main(args + ["--max-new-tokens", "64", "--limit", "1"])
+    n_calls = len(fakes["prompts"])
+    with pytest.raises(SystemExit, match="gen_kwargs") as exc:
+        run_mod.main(args + ["--max-new-tokens", "128"])
+    assert "new --condition label" in str(exc.value)
+    assert len(fakes["prompts"]) == n_calls
+
+
+def test_main_resume_csv_with_rows_but_no_sidecar_refuses(tmp_path, fakes):
+    (tmp_path / "himed_c_raw.csv").write_text(
+        "item_id,question_with_options,reference_answer,model_answer\ni0,Q,A,A\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="config.json"):
+        run_mod.main(["--model", "himed", "--condition", "c", "--output-dir", str(tmp_path)])
+    assert fakes["prompts"] == []

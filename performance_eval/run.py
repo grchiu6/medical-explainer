@@ -2,12 +2,15 @@
 
 Writes ``{output-dir}/{model}_{condition}_raw.csv`` with columns
 item_id, question_with_options, reference_answer, model_answer. Resume is keyed
-on item_id (prompt text differs per condition, item_id does not).
+on item_id (prompt text differs per condition, item_id does not). A sidecar
+``{csv}.config.json`` records the run configuration; resuming under a different
+configuration is refused.
 """
 
 import argparse
 import csv
 import importlib
+import json
 import os
 from pathlib import Path
 from typing import Callable
@@ -23,11 +26,48 @@ from performance_eval.data_milu import (
 from performance_eval.prompts import build_prompt
 
 FIELDNAMES = ["item_id", "question_with_options", "reference_answer", "model_answer"]
+# Keys allowed to differ on resume: a full run may continue a limited run's rows.
+_CONFIG_EXEMPT_KEYS = {"limit"}
 
 
 def _load_model_fn(name: str) -> Callable[..., str]:
     """Import models.<name> lazily (it imports torch) and return its get_answer."""
     return importlib.import_module(f"models.{name}").get_answer
+
+
+def _set_seed(seed: int) -> None:
+    import transformers  # lazy: unit tests don't need it
+
+    transformers.set_seed(seed)
+
+
+def config_sidecar_path(output_path: Path) -> Path:
+    return Path(f"{output_path}.config.json")
+
+
+def check_or_write_config(output_path: Path, config: dict) -> None:
+    """Write the config sidecar for a fresh CSV; on resume, refuse a config mismatch.
+
+    Raises SystemExit if the CSV has content but the sidecar is missing, or if
+    any non-exempt key differs.
+    """
+    output_path = Path(output_path)
+    sidecar = config_sidecar_path(output_path)
+    config = json.loads(json.dumps(config))  # normalize (tuples -> lists, etc.)
+    fix = "use a new --condition label or delete the CSV and its .config.json"
+    if output_path.exists() and output_path.stat().st_size > 0:
+        if not sidecar.is_file():
+            raise SystemExit(f"{output_path} has rows but {sidecar.name} is missing, so the "
+                             f"run configuration cannot be checked; {fix}")
+        saved = json.loads(sidecar.read_text(encoding="utf-8"))
+        differing = sorted(k for k in set(saved) | set(config)
+                           if k not in _CONFIG_EXEMPT_KEYS and saved.get(k) != config.get(k))
+        if differing:
+            details = "; ".join(f"{k}: saved={saved.get(k)!r} now={config.get(k)!r}" for k in differing)
+            raise SystemExit(f"Refusing to resume {output_path}: config differs ({details}); {fix}")
+        return
+    sidecar.parent.mkdir(parents=True, exist_ok=True)
+    sidecar.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def build_gen_kwargs(
@@ -37,8 +77,11 @@ def build_gen_kwargs(
     top_p: float | None = None,
     repetition_penalty: float | None = None,
 ) -> dict:
-    """Greedy by default; None values unset the model's lingering sampling defaults."""
-    kwargs: dict = {} if sample_decoding else {"do_sample": False, "temperature": None, "top_p": None}
+    """Greedy by default; None values unset the model's lingering sampling defaults and
+    repetition_penalty=1.0 disables the model's penalty (HF also applies it to prompt
+    tokens). With sample_decoding, start from {} so the model's defaults apply."""
+    kwargs: dict = {} if sample_decoding else {
+        "do_sample": False, "temperature": None, "top_p": None, "repetition_penalty": 1.0}
     if max_new_tokens is not None:
         kwargs["max_new_tokens"] = max_new_tokens
     if temperature is not None:
@@ -114,7 +157,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--temperature", type=float, default=None, help="requires --sample-decoding")
     parser.add_argument("--top-p", type=float, default=None, help="requires --sample-decoding")
     parser.add_argument("--repetition-penalty", type=float, default=None)
-    parser.add_argument("--seed", type=int, default=42, help="split/exemplar/shuffle/generation seed")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="data seed (split/exemplars/shuffle) — keep fixed across all conditions")
+    parser.add_argument("--gen-seed", type=int, default=42,
+                        help="generation seed (transformers.set_seed only); vary it for a noise floor")
     parser.add_argument("--shuffle-options", action="store_true",
                         help="shuffle option order of test items (position-bias check); exemplars stay native")
     parser.add_argument("--limit", type=int, default=None, help="only run the first N test items")
@@ -143,11 +189,23 @@ def main(argv: list[str] | None = None) -> None:
     if args.limit is not None:
         test = test[: args.limit]
 
-    import transformers  # lazy: unit tests don't need it
-
-    transformers.set_seed(args.seed)
-    get_answer_fn = _load_model_fn(args.model)
     output_path = args.output_dir / f"{args.model}_{args.condition}_raw.csv"
+    check_or_write_config(output_path, {
+        "model": args.model,
+        "condition": args.condition,
+        "use_cot": args.use_cot,
+        "use_fewshot": args.use_fewshot,
+        "fewshot_n": args.fewshot_n,
+        "gen_kwargs": gen_kwargs,
+        "seed": args.seed,
+        "gen_seed": args.gen_seed,
+        "shuffle_options": args.shuffle_options,
+        "limit": args.limit,
+        "exemplar_ids": [ex["id"] for ex in exemplars] if args.use_fewshot else [],
+    })
+
+    _set_seed(args.gen_seed)
+    get_answer_fn = _load_model_fn(args.model)
     run_condition(test, exemplars, get_answer_fn, args.use_cot, args.use_fewshot, gen_kwargs, output_path)
 
 
