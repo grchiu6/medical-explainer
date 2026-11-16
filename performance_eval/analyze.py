@@ -79,6 +79,9 @@ def build_ladder_rows(model: str, ladder: list[dict], n_options_mode: int) -> li
             "none_rate": s["none_rate"],
             "n_options_mode": n_options_mode,
             "accuracy_delta": None if cmp_ is None else cmp_["accuracy_delta"],
+            "n_paired": None if cmp_ is None else cmp_["n_paired"],
+            "only_prior_correct": None if cmp_ is None else cmp_["only_prior_correct"],
+            "only_new_correct": None if cmp_ is None else cmp_["only_new_correct"],
             "mcnemar_p": None if math.isnan(p) else p,
             "mcnemar_p_holm": None if math.isnan(p_holm) else p_holm,
         })
@@ -91,6 +94,11 @@ def _pct(x) -> str:
 
 def _signed_pct(x) -> str:
     return "—" if x is None or (isinstance(x, float) and math.isnan(x)) else f"{x * 100:+.1f}%"
+
+
+def _flips(r) -> str:
+    new, prior = r.get("only_new_correct"), r.get("only_prior_correct")
+    return "—" if new is None or prior is None else f"+{new} / −{prior}"
 
 
 def _p(x) -> str:
@@ -108,18 +116,20 @@ def write_results_md(summary_rows: list[dict], out_path: Path) -> None:
         f"Chance baseline: {chance} (1 / {k} options, the most common option count in the data).",
         "",
         "Δ vs prior and McNemar p compare each row to the row above it (paired, same items). "
+        "Flips = items newly correct / newly wrong relative to the row above (+N / −M; net = N − M). "
         "Holm p corrects the McNemar p-values across this model's ladder. "
         "Accuracy CIs are 95% Wilson intervals. none_rate is the share of answers with no "
         "parseable letter (counted as incorrect). — means not applicable (first row has no prior).",
         "",
-        "| model | condition | n | accuracy (95% CI) | none_rate | Δ vs prior | McNemar p | McNemar p (Holm) | chance baseline |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| model | condition | n | accuracy (95% CI) | none_rate | Δ vs prior | flips (newly correct / newly wrong) | McNemar p | McNemar p (Holm) | chance baseline |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in summary_rows:
         lines.append(
             f"| {r['model']} | {r['condition']} | {r['n']} "
             f"| {_pct(r['accuracy'])} ({_pct(r['ci_low'])}–{_pct(r['ci_high'])}) "
             f"| {_pct(r['none_rate'])} | {_signed_pct(r['accuracy_delta'])} "
+            f"| {_flips(r)} "
             f"| {_p(r['mcnemar_p'])} | {_p(r['mcnemar_p_holm'])} "
             f"| {_pct(1 / r['n_options_mode'])} |"
         )

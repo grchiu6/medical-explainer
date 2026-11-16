@@ -64,6 +64,7 @@ def test_write_results_md_includes_chance_baseline_and_holm_column(tmp_path):
     assert "30.0%" in text and "21.0%" in text and "40.0%" in text
     assert "—" in text
     assert "row above" in text
+    assert "newly correct" in text
 
 
 def test_build_ladder_rows_holm_corrects_across_the_ladder():
@@ -84,6 +85,10 @@ def test_build_ladder_rows_holm_corrects_across_the_ladder():
     assert rows[1]["mcnemar_p_holm"] == rows[1]["mcnemar_p"] * 2
     assert rows[2]["mcnemar_p_holm"] >= rows[2]["mcnemar_p"]
     assert all(r["model"] == "himed" for r in rows)
+    assert rows[0]["n_paired"] is None
+    assert rows[0]["only_prior_correct"] is None and rows[0]["only_new_correct"] is None
+    assert (rows[1]["n_paired"], rows[1]["only_prior_correct"], rows[1]["only_new_correct"]) == (100, 2, 10)
+    assert (rows[2]["only_prior_correct"], rows[2]["only_new_correct"]) == (3, 5)
     assert [r["condition"] for r in rows] == ["c0_baseline", "c2_cot", "c3_fewshot"]
 
 
@@ -135,7 +140,15 @@ def test_main_end_to_end_scores_and_writes_results(tmp_path):
     md = (out / "results_m1.md").read_text(encoding="utf-8")
     assert "c0_baseline" in md and "c2_cot" in md
     assert "chance" in md.lower() and "25.0%" in md
-    print(md)
+    row0 = next(l for l in md.splitlines() if "| c0_baseline |" in l)
+    row1 = next(l for l in md.splitlines() if "| c2_cot |" in l)
+    cells0 = [c.strip() for c in row0.strip("|").split("|")]
+    cells1 = [c.strip() for c in row1.strip("|").split("|")]
+    # columns: model, condition, n, acc, none_rate, delta, flips, p, p_holm, chance
+    assert cells0[5] == "—" and cells0[6] == "—" and cells0[7] == "—"
+    assert cells1[5] == "+25.0%"
+    assert cells1[6] == "+1 / −0"
+    assert cells1[7] == "1.0000" and cells1[8] == "1.0000"
 
 
 def test_main_missing_raw_csv_exits(tmp_path):
