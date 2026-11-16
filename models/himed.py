@@ -108,7 +108,24 @@ def _format_for_himed(prompt_text: str) -> str:
     )
 
 
-def get_answer(prompt: str) -> str:
+_DEFAULT_GEN_KWARGS = {
+    # 1024 since 2026-10-01: at 512, 19/60 high-level answers ran out of
+    # tokens inside "## Thinking". Low/mid were generated at 512 (0 and 1
+    # of 60 truncated), high was regenerated at 1024.
+    "max_new_tokens": 1024,
+    "do_sample": True,
+    "temperature": 0.3,    # low temperature = focused, minimal hallucination
+    "top_p": 0.9,
+    "repetition_penalty": 1.2,
+}
+
+
+def _merge_gen_kwargs(overrides: dict | None) -> dict:
+    """Merge override generation kwargs onto this model's defaults."""
+    return {**_DEFAULT_GEN_KWARGS, **(overrides or {})}
+
+
+def get_answer(prompt: str, gen_kwargs: dict | None = None) -> str:
     """Generate a Hindi medical explanation using HiMed-8B.
 
     Same interface as all other model wrappers — takes the pre-built prompt
@@ -116,6 +133,9 @@ def get_answer(prompt: str) -> str:
 
     Args:
         prompt: The fully-formatted Hindi instruction prompt from run_eval.py.
+        gen_kwargs: Optional generation kwargs that override _DEFAULT_GEN_KWARGS
+            for this call only (e.g. {"do_sample": False} for greedy decoding).
+            None keeps the defaults.
 
     Returns:
         The model's Hindi response as a string.
@@ -131,14 +151,7 @@ def get_answer(prompt: str) -> str:
     with torch.no_grad():
         outputs = _model.generate(
             **inputs,
-            # 1024 since 2026-10-01: at 512, 19/60 high-level answers ran out of
-            # tokens inside "## Thinking". Low/mid were generated at 512 (0 and 1
-            # of 60 truncated), high was regenerated at 1024.
-            max_new_tokens=1024,
-            do_sample=True,
-            temperature=0.3,    # low temperature = focused, minimal hallucination
-            top_p=0.9,
-            repetition_penalty=1.2,
+            **_merge_gen_kwargs(gen_kwargs),
         )
 
     # Decode only the newly generated tokens (skip the prompt)

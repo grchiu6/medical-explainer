@@ -116,7 +116,21 @@ def _format_for_nanda(prompt_text: str) -> str:
     )
 
 
-def get_answer(prompt: str) -> str:
+_DEFAULT_GEN_KWARGS = {
+    "max_new_tokens": 512,
+    "do_sample": True,
+    "top_p": 0.95,
+    "temperature": 0.2,
+    "repetition_penalty": 1.3,   # from Nanda model card — prevents loops
+}
+
+
+def _merge_gen_kwargs(overrides: dict | None) -> dict:
+    """Merge override generation kwargs onto this model's defaults."""
+    return {**_DEFAULT_GEN_KWARGS, **(overrides or {})}
+
+
+def get_answer(prompt: str, gen_kwargs: dict | None = None) -> str:
     """Generate an answer using Nanda-10B.
 
     Same interface as airavata.py and apollo.py — takes the pre-built
@@ -127,6 +141,9 @@ def get_answer(prompt: str) -> str:
 
     Args:
         prompt: The fully-formatted prompt string from run_eval.py.
+        gen_kwargs: Optional generation kwargs that override _DEFAULT_GEN_KWARGS
+            for this call only (e.g. {"do_sample": False} for greedy decoding).
+            None keeps the defaults.
 
     Returns:
         The model's Hindi answer as a string.
@@ -142,11 +159,7 @@ def get_answer(prompt: str) -> str:
     with torch.no_grad():
         outputs = _model.generate(
             **inputs,
-            max_new_tokens=512,
-            do_sample=True,
-            top_p=0.95,
-            temperature=0.2,
-            repetition_penalty=1.3,   # from Nanda model card — prevents loops
+            **_merge_gen_kwargs(gen_kwargs),
         )
 
     input_length = inputs["input_ids"].shape[1]
