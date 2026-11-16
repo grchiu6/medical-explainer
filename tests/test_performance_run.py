@@ -116,11 +116,77 @@ def test_main_end_to_end_greedy_fewshot(tmp_path, fakes):
                for p in fakes["prompts"])  # 3 exemplars + target question
 
 
-def test_main_limit_and_shuffle(tmp_path, fakes):
-    run_mod.main(["--model", "nanda", "--condition", "x", "--limit", "2", "--shuffle-options",
+def _real_items(n=12):
+    """Items with distinct option texts and a qwo consistent with data_milu."""
+    from performance_eval.data_milu import _format_qwo
+
+    items = []
+    for k in range(n):
+        opts = {c: f"opt{k}{c}" for c in "ABCD"}
+        items.append({"id": f"r{k}", "question": f"stem{k}", "options": opts,
+                      "question_with_options": _format_qwo(f"stem{k}", opts),
+                      "answer_letter": "ABCD"[k % 4], "n_options": 4})
+    return items
+
+
+def _option_text(qwo, letter):
+    for line in qwo.split("\n"):
+        if line.startswith(f"{letter}. "):
+            return line[3:]
+    raise AssertionError("letter not found")
+
+
+def test_main_shuffle_keeps_reference_consistent_and_actually_shuffles(tmp_path, fakes, monkeypatch):
+    items = _real_items()
+    monkeypatch.setattr(run_mod, "load_milu_hindi_medicine", lambda hf_token=None: items)
+    run_mod.main(["--model", "nanda", "--condition", "x", "--shuffle-options",
                   "--fewshot-n", "4", "--output-dir", str(tmp_path)])
     rows = list(csv.DictReader(open(tmp_path / "nanda_x_raw.csv", encoding="utf-8")))
-    assert len(rows) == 2
+    by_id = {it["id"]: it for it in items}
+    assert len(rows) == 8
+    changed = 0
+    for r in rows:
+        orig = by_id[r["item_id"]]
+        original_text = orig["options"][orig["answer_letter"]]
+        assert _option_text(r["question_with_options"], r["reference_answer"]) == original_text
+        if r["question_with_options"] != orig["question_with_options"]:
+            changed += 1
+    assert changed >= 1
+
+
+def test_main_limit_slices_after_split(tmp_path, fakes, monkeypatch):
+    from performance_eval.data_milu import split_test_fewshot
+
+    items = _real_items()
+    monkeypatch.setattr(run_mod, "load_milu_hindi_medicine", lambda hf_token=None: items)
+    test, pool = split_test_fewshot(items, fewshot_n=6, seed=42)
+    run_mod.main(["--model", "himed", "--condition", "l", "--limit", "2", "--use-fewshot",
+                  "--fewshot-n", "6", "--output-dir", str(tmp_path)])
+    rows = list(csv.DictReader(open(tmp_path / "himed_l_raw.csv", encoding="utf-8")))
+    assert [r["item_id"] for r in rows] == [t["id"] for t in test[:2]]
+    pool_stems = {it["question_with_options"] for it in pool}
+    for p in fakes["prompts"]:
+        block = p.split("Here are example questions:")[1].split("You are answering")[0]
+        exemplars = [b.split("\nAnswer: ")[0].removeprefix("Question: ").strip()
+                     for b in block.strip().split("\n\n") if b.startswith("Question: ")]
+        assert len(exemplars) == 3
+        assert all(e in pool_stems for e in exemplars)
+
+
+def test_run_condition_recovers_from_empty_existing_file(tmp_path):
+    out = tmp_path / "out.csv"
+    out.write_text("", encoding="utf-8")
+    items = [{"id": f"m{k}", "question_with_options": f"Q{k}", "answer_letter": "A", "n_options": 2}
+             for k in range(2)]
+    fn = lambda prompt, gen_kwargs=None: "Answer: A"
+    run_condition(items, [], get_answer_fn=fn, use_cot=False, use_fewshot=False, gen_kwargs={}, output_path=out)
+    rows = list(csv.DictReader(open(out, encoding="utf-8")))
+    assert [r["item_id"] for r in rows] == ["m0", "m1"]
+    calls = []
+    run_condition(items, [], get_answer_fn=lambda p, gen_kwargs=None: calls.append(p) or "x",
+                  use_cot=False, use_fewshot=False, gen_kwargs={}, output_path=out)
+    assert calls == []
+    assert len(list(csv.DictReader(open(out, encoding="utf-8")))) == 2
 
 
 def test_main_rejects_temperature_without_sample_decoding(tmp_path, fakes):

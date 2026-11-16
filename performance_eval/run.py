@@ -70,8 +70,8 @@ def run_condition(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     done: set[str] = set()
-    exists = output_path.exists()
-    if exists:
+    has_content = output_path.exists() and output_path.stat().st_size > 0
+    if has_content:
         with open(output_path, encoding="utf-8", newline="") as f:
             done = {row["item_id"] for row in csv.DictReader(f)}
     remaining = [it for it in items if it["id"] not in done]
@@ -79,7 +79,7 @@ def run_condition(
 
     with open(output_path, "a", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-        if not exists:
+        if not has_content:
             writer.writeheader()
         for i, item in enumerate(remaining, 1):
             prompt = build_prompt(
