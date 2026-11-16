@@ -47,3 +47,12 @@ def test_no_stray_blank_lines():
     for cot in (False, True):
         for e in (None, ex):
             assert "\n\n\n" not in build_prompt("प्रश्न?\nA. एक\nB. दो", 2, cot, e)
+
+
+def test_cot_prompt_ends_with_reasoning_cue_not_bare_answer():
+    cue = "Reasoning (step by step, in Hindi):"
+    ex = [{"question_with_options": "q?\nA. क\nB. ख", "answer_letter": "A"}]
+    for e in (None, ex):
+        p = build_prompt("प्रश्न?\nA. एक\nB. दो", 2, use_cot=True, exemplars=e)
+        assert p.rstrip().endswith(cue)
+        assert not p.rstrip().endswith("Answer")

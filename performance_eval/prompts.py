@@ -50,7 +50,10 @@ def build_prompt(
     template = _COT_INSTRUCTION if use_cot else _BASELINE_INSTRUCTION
     parts.append(template.format(letters=_make_letter_list(n_options)))
 
-    # CoT: leave the ending open so the model reasons before the final marker.
-    closing = "Answer" if use_cot else "Answer (single letter only):"
+    # CoT: end on a reasoning cue (not "Answer"), so the model reasons first
+    # and only then writes the final `Answer: X` line.
+    closing = (
+        "Reasoning (step by step, in Hindi):" if use_cot else "Answer (single letter only):"
+    )
     parts.append(f"Question: {question_with_options}\n\n{closing}")
     return "\n\n".join(parts)
