@@ -34,13 +34,23 @@ def build_tag_prompt(item: dict) -> str:
 
 
 def parse_tag(text: str) -> str | None:
+    """Tag named by the Response part. A response that is exactly a tag wins; otherwise the
+    first whole-word tag mention, ignoring negated ("non-clinical") mentions and the phrase
+    "other hand"."""
     from literacy_eval.analysis.clean import extract_answer
 
     response, _ = extract_answer(text or "")
-    m = _TAG_RE.search(response)
-    if not m:
-        return None
-    return m.group(1).lower().replace(" ", "_")
+    whole = re.sub(r"\s+", "_", response.strip().lower().rstrip(" .,;:!?।\"'"))
+    if whole in TAGS:
+        return whole
+    for m in _TAG_RE.finditer(response):
+        tag = m.group(1).lower().replace(" ", "_")
+        if re.search(r"non[-\s]$", response[:m.start()], re.IGNORECASE):
+            continue
+        if tag == "other" and re.match(r"\s+hand\b", response[m.end():], re.IGNORECASE):
+            continue
+        return tag
+    return None
 
 
 def run_tagging(items: list[dict], get_answer_fn: Callable[..., str], out_path: Path) -> None:
@@ -110,7 +120,11 @@ def agreement(model_tags: dict, hand_tags: dict) -> dict:
     ids = sorted(set(model_tags) & set(hand_tags))
     n = len(ids)
     if n == 0:
-        return {"n": 0, "percent_agree": 0.0, "cohens_kappa": 0.0}
+        raise ValueError("no overlapping item ids between model and hand tags")
+    for i in ids:
+        if model_tags[i] not in TAGS and model_tags[i] != UNTAGGED:
+            raise ValueError(f"item {i!r}: invalid model tag {model_tags[i]!r}; "
+                             f"expected one of {TAGS} or {UNTAGGED!r}")
     p_o = sum(model_tags[i] == hand_tags[i] for i in ids) / n
     cats = {model_tags[i] for i in ids} | {hand_tags[i] for i in ids}
     p_e = sum((sum(model_tags[i] == c for i in ids) / n) * (sum(hand_tags[i] == c for i in ids) / n)

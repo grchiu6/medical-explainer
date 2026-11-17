@@ -72,7 +72,25 @@ def test_agreement_mixed_hand_computed():
 def test_agreement_degenerate_and_overlap():
     assert agreement({"a": "other", "b": "other"}, {"a": "other", "b": "other", "z": "x"})["cohens_kappa"] == 1.0
     assert agreement({"a": "other", "b": "other"}, {"a": "other", "b": "clinical"})["cohens_kappa"] == 0.0
-    assert agreement({"a": "other"}, {"b": "other"})["n"] == 0
+    with pytest.raises(ValueError, match="overlapping"):
+        agreement({"a": "other"}, {"b": "other"})
+
+
+def test_agreement_rejects_unknown_model_tag():
+    with pytest.raises(ValueError, match="'b'"):
+        agreement({"a": "other", "b": "clincal"}, {"a": "other", "b": "other"})
+    agreement({"a": "untagged"}, {"a": "other"})  # untagged is allowed
+
+
+def test_parse_tag_negation_and_whole_response():
+    assert parse_tag("non-clinical") is None
+    assert parse_tag("Non clinical") is None
+    assert parse_tag("non-clinical, ayush") == "ayush"
+    assert parse_tag("On the other hand, clinical") == "clinical"
+    assert parse_tag("public health") == "public_health"
+    assert parse_tag("  Public Health. ") == "public_health"
+    assert parse_tag("other.") == "other"
+    assert parse_tag("on the other hand") is None
 
 
 def test_agreement_untagged_is_category():
