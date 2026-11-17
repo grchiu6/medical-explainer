@@ -119,3 +119,11 @@ The curated track is what has been evaluated so far. The HiMed track is implemen
 1. **Topic sourcing**: Should the baseline use curated topics, dataset-derived topics (HiMed), or both? (See `topics_himed.py` — already implemented but not run)
 2. **Automated evaluation metrics**: How to measure register adaptation and medical accuracy without human reviewers?
 3. **Nanda completion**: 9 responses still missing from nanda_high_raw.csv
+
+---
+
+## Known Issue: Nanda prompt template (fixed 2026-11-16)
+
+`models/nanda.py` used a hand-built Llama 3 prompt string with a doubled `<|begin_of_text|>` and no `\n\n` after each `<|end_header_id|>`. Under greedy decoding (performance_eval, MILU C0) Nanda's first token was `<|eot_id|>` on all 489 items, so every answer was empty. Nanda's official chat template gave real answers on the same items (PACE diagnostic job 7123800). The wrapper now uses `tokenizer.apply_chat_template` and tokenizes with `add_special_tokens=False`, matching `models/himed.py`.
+
+**Impact on literacy_eval:** every Nanda literacy output generated before 2026-11-16 used the old template. Those runs sampled (temperature 0.2), so they produced text, but the malformed prompt may have affected them (e.g. the high refusal rate at the low level). Re-runs after this date will not reproduce them.

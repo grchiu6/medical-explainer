@@ -82,37 +82,39 @@ def _load_model():
 
 
 def _format_for_nanda(prompt_text: str) -> str:
-    """Wrap the prompt in Llama 3 chat format as used by Nanda.
+    """Wrap the prompt in Nanda's official chat format.
 
-    Nanda uses the standard Llama 3 chat format with special header tokens.
-    The system message tells the model what role it's playing.
-    The user message contains our literacy-level prompt.
+    Uses the tokenizer's own chat template (same approach as models/himed.py)
+    instead of hand-building the special-token string.
 
-    From the Nanda model card:
-        <|begin_of_text|><|start_header_id|>system<|end_header_id|>
-        You are a helpful AI assistant.<|eot_id|>
-        <|start_header_id|>user<|end_header_id|>
-        {Question}<|eot_id|>
-        <|start_header_id|>assistant<|end_header_id|>
+    WHY (fixed 2026-11-16): the old hand-built string omitted the "\\n\\n" that
+    the Llama 3 template puts after every <|end_header_id|>, and the tokenizer
+    then added a second <|begin_of_text|>. Sampled decoding (the literacy runs)
+    happened to get past it, but under greedy decoding Nanda's first token was
+    <|eot_id|> on all 489 MILU items, i.e. every answer was empty. With the
+    official template the same items get real answers (PACE job 7123800).
+    Nanda literacy outputs generated before this date used the old template.
 
     We keep the system message minimal and in English (consistent with
     Nanda's training) and put the full Hindi instruction in the user turn.
 
     Args:
-        prompt_text: The pre-built prompt from literacy_eval/prompts.py.
+        prompt_text: The pre-built prompt (literacy_eval or performance_eval).
 
     Returns:
-        The prompt formatted in Llama 3 chat style.
+        The prompt formatted with Nanda's chat template, ending in the
+        assistant header. It already contains <|begin_of_text|>, so it must
+        be tokenized with add_special_tokens=False.
     """
     system_message = "You are a helpful medical educator. Follow the instructions and respond only in Hindi."
-
-    return (
-        f"<|begin_of_text|>"
-        f"<|start_header_id|>system<|end_header_id|>"
-        f"{system_message}<|eot_id|>"
-        f"<|start_header_id|>user<|end_header_id|>"
-        f"{prompt_text}<|eot_id|>"
-        f"<|start_header_id|>assistant<|end_header_id|>"
+    messages = [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": prompt_text},
+    ]
+    return _tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tokenize=False,
     )
 
 
@@ -154,7 +156,9 @@ def get_answer(prompt: str, gen_kwargs: dict | None = None) -> str:
 
     # find which device the model's first layer is on
     device = next(_model.parameters()).device
-    inputs = _tokenizer(formatted, return_tensors="pt").to(device)
+    # add_special_tokens=False: the chat template already starts with
+    # <|begin_of_text|>; letting the tokenizer add one doubles it.
+    inputs = _tokenizer(formatted, return_tensors="pt", add_special_tokens=False).to(device)
 
     with torch.no_grad():
         outputs = _model.generate(
