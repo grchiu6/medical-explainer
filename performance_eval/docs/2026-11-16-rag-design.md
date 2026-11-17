@@ -84,6 +84,8 @@ Before spending GPU time on 489 items, Grace reads the top-5 passages for **20 f
   2. `rag_k5` vs `rag_rand_k5` — is the gain from *relevance*?
 - RAG "works" when both are positive and adjusted p < 0.05. If (1) holds but (2) doesn't, report it as an extra-context effect, not knowledge.
 - `rag_rand_k5` vs `c0_baseline` is reported as descriptive (no test).
+- Harm: a tested comparison with Δ < 0 and adjusted p < 0.05 is reported as harm; `rag_k5` significantly worse than `c0_baseline` gives the verdict "RAG hurts (significant)", not "no effect".
+- Pre-registered: if a RAG condition's non_letter_rate (share of responses whose Response part is not a bare option letter) exceeds 5%, the first-letter scorer may misread sentence answers; also report after_marker-mode accuracy and hand-audit those rows. `score.py` is not changed.
 - Report accuracy + Wilson CI, NONE rate, flips (+/−) as in `results_himed.md`.
 - `analyze.py` today compares only consecutive ladder rows and always writes `results_{model}.md` (would overwrite the ladder results). **Implementation (Claude's call, in the plan):** a small `performance_eval/rag/report.py` reuses `analyze.py`'s scoring and McNemar helpers, runs exactly the comparisons above, and writes `results_himed_rag.md`; `analyze.py` and the ladder file are untouched.
 

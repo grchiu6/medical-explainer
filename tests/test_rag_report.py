@@ -30,6 +30,12 @@ def test_relevance_effect():
         assert c["significant"]
         assert c["p_adj"] == min(1, c["mcnemar_p"] * 2)
     assert report.verdict(comps) == "relevance effect"
+    # rag gains 20 items over both c0 and rand; no losses.
+    assert (comps[0]["only_new_correct"], comps[0]["only_prior_correct"]) == (20, 0)
+    assert (comps[1]["only_new_correct"], comps[1]["only_prior_correct"]) == (20, 0)
+    assert comps[0]["delta"] == pytest.approx(0.5)
+    assert (comps[2]["only_new_correct"], comps[2]["only_prior_correct"]) == (0, 0)
+    assert comps[2]["delta"] == 0
 
 
 def test_extra_context_effect():
@@ -90,3 +96,65 @@ def test_cli_end_to_end(tmp_path):
     text = out.read_text()
     assert "rag_k5" in text and "25.0%" in text and "untagged" in text
     assert (tmp_path / "himed_rag_k5_scored.csv").exists()
+
+
+def test_significant_harm_is_not_no_effect():
+    comps = report.rag_comparisons(_scored(IDS[:30], IDS[:30], IDS[:10]))
+    assert comps[0]["delta"] < 0
+    assert comps[0]["significant"] is False
+    assert comps[0]["harm"] is True
+    assert report.verdict(comps) == "RAG hurts (significant)"
+
+
+def test_harm_requires_significance_and_only_on_tested_rows():
+    comps = report.rag_comparisons(_scored(IDS[:10], IDS[:10], IDS[:10]))
+    assert comps[0]["harm"] is False
+    assert "harm" not in comps[2] or comps[2]["harm"] is None
+    # tiny drop: 1 item lost, not significant
+    comps = report.rag_comparisons(_scored(IDS[:10], IDS[:10], IDS[:9]))
+    assert comps[0]["delta"] < 0 and comps[0]["harm"] is False
+    assert report.verdict(comps) == "no effect"
+
+
+def test_non_letter_rate():
+    assert report.non_letter_rate(["D", "D.", "I think D is correct."]) == pytest.approx(1 / 3)
+    assert report.non_letter_rate(["## Thinking\nhmm\n## Response\nb)"]) == 0
+    assert report.non_letter_rate(["", "AB"]) == 1.0
+
+
+def test_report_text_harm_rule_non_letter_and_warning(tmp_path):
+    s = _scored(IDS[:10], IDS[:10], IDS[:30])
+    comps = report.rag_comparisons(s, family_size=2)
+    p = tmp_path / "r.md"
+    report.write_report(p, _summ(s), comps, report.verdict(comps), None, None, scored=s,
+                        non_letter={"c0_baseline": 0.0, "rag_rand_k5": 0.0, "rag_k5": 0.2})
+    text = p.read_text()
+    assert "non_letter_rate" in text and "WARNING" in text and "rag_k5" in text.split("WARNING")[1]
+    assert "paired paired" not in text
+    assert "harm" in text and "5%" in text
+    p2 = tmp_path / "r2.md"
+    report.write_report(p2, _summ(s), comps, report.verdict(comps), None, None, scored=s,
+                        non_letter={c: 0.0 for c in report.CONDITIONS})
+    assert "WARNING" not in p2.read_text()
+
+
+def test_report_text_uses_passed_family_size(tmp_path):
+    s = _scored(IDS[:10], IDS[:10], IDS[:30])
+    comps = report.rag_comparisons(s, family_size=3)
+    assert comps[0]["p_adj"] == min(1, comps[0]["mcnemar_p"] * 3)
+    p = tmp_path / "r.md"
+    report.write_report(p, _summ(s), comps, report.verdict(comps), None, None, scored=s, family_size=3)
+    assert "family m = 3" in p.read_text() and "×3" in p.read_text()
+
+
+def test_cli_prints_warning_when_non_letter_high(tmp_path, capsys):
+    for cond in report.CONDITIONS:
+        with open(tmp_path / f"himed_{cond}_raw.csv", "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["item_id", "question_with_options", "reference_answer", "model_answer"])
+            for i in range(4):
+                w.writerow([f"q{i}", "Q?\nA. x\nB. y", "A", "The answer is A" if cond == "rag_k5" else "A"])
+    out = tmp_path / "o" / "results_himed_rag.md"
+    report.main(["--raw-dir", str(tmp_path), "--out", str(out)])
+    assert "WARNING" in capsys.readouterr().out
+    assert "WARNING" in out.read_text()

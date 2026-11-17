@@ -7,6 +7,7 @@ CLI: python -m performance_eval.rag.report --raw-dir DIR [--spotcheck SHEET]
 
 import argparse
 import csv
+import re
 from pathlib import Path
 
 from performance_eval import analyze
@@ -15,6 +16,8 @@ from performance_eval.analyze import _p, _pct, _signed_pp
 CONDITIONS = ("c0_baseline", "rag_rand_k5", "rag_k5")
 FAMILY_SIZE = 2
 ALPHA = analyze.ALPHA
+NON_LETTER_WARN = 0.05
+_LETTER_ONLY = re.compile(r"^[A-Ja-j][.)]?$")
 DEFAULT_OUT = analyze.DEFAULT_OUT_DIR / "results_himed_rag.md"
 FORBIDDEN_OUT = "results_himed.md"
 # (new, prior, tested)
@@ -30,23 +33,37 @@ def rag_comparisons(scored: dict[str, list[dict]], family_size: int = FAMILY_SIZ
         row = {"new": new, "prior": prior, "tested": tested, "n_paired": c["n_paired"],
                "delta": c["accuracy_delta"], "only_new_correct": c["only_new_correct"],
                "only_prior_correct": c["only_prior_correct"],
-               "mcnemar_p": None, "p_adj": None, "significant": None}
+               "mcnemar_p": None, "p_adj": None, "significant": None, "harm": None}
         if tested:
             p = c["mcnemar_p"]
             row["mcnemar_p"] = p
             row["p_adj"] = min(1, p * family_size)
             row["significant"] = bool(c["accuracy_delta"] > 0 and row["p_adj"] < ALPHA)
+            row["harm"] = bool(c["accuracy_delta"] < 0 and row["p_adj"] < ALPHA)
         rows.append(row)
     return rows
 
 
 def verdict(comparisons: list[dict]) -> str:
     vs_c0, vs_rand = comparisons[0], comparisons[1]
+    if vs_c0["harm"]:
+        return "RAG hurts (significant)"
     if vs_c0["significant"] and vs_rand["significant"]:
         return "relevance effect"
     if vs_c0["significant"]:
         return "extra-context effect"
     return "no effect"
+
+
+def non_letter_rate(answers: list[str]) -> float:
+    """Share of raw answers whose Response part (HiMed Thinking stripped) is not a bare
+    option letter such as "D", "d." or "B)". Descriptive; the scorer is not changed."""
+    from literacy_eval.analysis.clean import extract_answer
+
+    if not answers:
+        return 0.0
+    bad = sum(not _LETTER_ONLY.match(extract_answer(a or "")[0].strip()) for a in answers)
+    return bad / len(answers)
 
 
 def _per_type_lines(scored: dict[str, list[dict]], types: dict[str, str]) -> list[str]:
@@ -68,8 +85,15 @@ def _per_type_lines(scored: dict[str, list[dict]], types: dict[str, str]) -> lis
     return lines + [""]
 
 
+def non_letter_warning(high: list[str], rates: dict) -> str:
+    det = ", ".join(f"{c} {_pct(rates[c])}" for c in high)
+    return (f"WARNING: non_letter_rate above {_pct(NON_LETTER_WARN)} for {det}; the first-letter "
+            "scorer may misread sentence answers. Report after_marker-mode accuracy and hand-audit those rows.")
+
+
 def write_report(path, summaries, comparisons, verdict, spotcheck=None, types=None,
-                 scored=None, n_options=None, majority=None) -> None:
+                 scored=None, n_options=None, majority=None,
+                 non_letter=None, family_size=FAMILY_SIZE) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = ["# HiMed-8B RAG results", ""]
@@ -80,15 +104,26 @@ def write_report(path, summaries, comparisons, verdict, spotcheck=None, types=No
                         f"{_pct(majority[1])}." if majority else ""))
         lines.append("")
     lines += ["## Accuracy", "",
-              "| condition | n | accuracy (95% CI) | none_rate |", "|---|---|---|---|"]
+              "| condition | n | accuracy (95% CI) | none_rate | non_letter_rate |",
+              "|---|---|---|---|---|"]
     for c in CONDITIONS:
         s = summaries[c]
+        nl = "—" if non_letter is None else _pct(non_letter[c])
         lines.append(f"| {c} | {s['n']} | {_pct(s['accuracy'])} "
-                     f"({_pct(s['ci_low'])}–{_pct(s['ci_high'])}) | {_pct(s['none_rate'])} |")
+                     f"({_pct(s['ci_low'])}–{_pct(s['ci_high'])}) | {_pct(s['none_rate'])} | {nl} |")
+    lines += ["", "non_letter_rate = share of responses whose Response part (HiMed Thinking stripped) "
+              "is not a bare option letter. Pre-registered: if a RAG condition's non_letter_rate "
+              "exceeds 5%, the first-letter scorer may misread sentence answers; also report "
+              "after_marker-mode accuracy and hand-audit those rows."]
+    high = [c for c in CONDITIONS if non_letter is not None and non_letter[c] > NON_LETTER_WARN]
+    if high:
+        lines += ["", non_letter_warning(high, non_letter)]
     lines += ["", "## Pre-registered comparisons", "",
-              f"Pre-registered family m = {FAMILY_SIZE}: paired paired McNemar tests (rag_k5 vs c0_baseline, "
-              f"rag_k5 vs rag_rand_k5). Bonferroni p_adj = min(1, p×{FAMILY_SIZE}); significance = "
-              f"Δ > 0 and p_adj < {ALPHA}. Δ = new − prior (first-named minus second). "
+              f"Pre-registered family m = {family_size}: paired McNemar tests (rag_k5 vs c0_baseline, "
+              f"rag_k5 vs rag_rand_k5). Bonferroni p_adj = min(1, p×{family_size}); significance = "
+              f"Δ > 0 and p_adj < {ALPHA}. Harm = Δ < 0 and p_adj < {ALPHA} on the same test; "
+              "a significant harm for rag_k5 vs c0_baseline gives the verdict \"RAG hurts (significant)\" "
+              "rather than \"no effect\". Δ = new − prior (first-named minus second). "
               "rag_rand_k5 vs c0_baseline is descriptive only (not tested). "
               "Flips = newly correct / newly wrong relative to the prior condition.", "",
               "| comparison (new vs prior) | n_paired | Δ (pp) | flips | McNemar p | p_adj | significant |",
@@ -124,11 +159,13 @@ def main(argv=None) -> None:
     if args.out.name == FORBIDDEN_OUT:
         raise SystemExit(f"refusing to write {FORBIDDEN_OUT}; use results_himed_rag.md")
 
-    raw_rows, scored = {}, {}
+    scored, non_letter = {}, {}
     for c in CONDITIONS:
         raw = args.raw_dir / f"himed_{c}_raw.csv"
         if not raw.is_file():
             raise SystemExit(f"raw CSV not found: {raw}")
+        with open(raw, newline="", encoding="utf-8") as f:
+            non_letter[c] = non_letter_rate([r["model_answer"] for r in csv.DictReader(f)])
         scored[c] = analyze.score_raw_csv(raw, "first_letter", args.raw_dir / f"himed_{c}_scored.csv")
     analyze.check_item_ids([(c, scored[c]) for c in CONDITIONS])
 
@@ -141,7 +178,11 @@ def main(argv=None) -> None:
     types = _read_types(args.types) if args.types else None
     write_report(args.out, summaries, comps, verdict(comps), spot, types, scored=scored,
                  n_options=analyze.n_options_mode(scored["c0_baseline"]),
-                 majority=analyze.majority_baseline(scored["c0_baseline"]))
+                 majority=analyze.majority_baseline(scored["c0_baseline"]),
+                 non_letter=non_letter, family_size=FAMILY_SIZE)
+    high = [c for c in CONDITIONS if non_letter[c] > NON_LETTER_WARN]
+    if high:
+        print(non_letter_warning(high, non_letter))
     print(args.out)
 
 
