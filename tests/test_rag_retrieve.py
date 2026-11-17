@@ -3,7 +3,8 @@ import json
 import pytest
 
 from performance_eval.rag.index import build_index, load_index
-from performance_eval.rag.retrieve import retrieve_topk, sample_random, write_passages
+from performance_eval.rag.retrieve import (check_corpus_matches_index, retrieve_topk, sample_random,
+                                           write_passages)
 from tests.test_rag_index import FakeEncoder, _write_corpus
 
 N = 12
@@ -73,3 +74,21 @@ def test_write_random_has_null_scores(tmp_path, idx):
     l = json.loads(path.read_text().splitlines()[0])
     assert all(p["score"] is None for p in l["passages"])
     assert json.loads(path.with_suffix(".meta.json").read_text())["seed"] == 42
+
+
+def test_meta_records_split_seed_and_seed_separately(tmp_path, idx):
+    _, ids, meta, corpus = idx
+    hits = sample_random(ITEMS, ids, k=5, seed=7)
+    path = tmp_path / "r.jsonl"
+    write_passages(path, "rag_rand_k5", hits, corpus, k=5, seed=7, index_meta=meta, split_seed=42)
+    m = json.loads(path.with_suffix(".meta.json").read_text())
+    assert m["seed"] == 7 and m["split_seed"] == 42
+
+
+def test_corpus_sha_mismatch_exits(tmp_path, idx):
+    _, _, meta, _ = idx
+    check_corpus_matches_index(tmp_path / "corpus.jsonl", meta)  # same file: ok
+    other = tmp_path / "other.jsonl"
+    other.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="corpus"):
+        check_corpus_matches_index(other, meta)

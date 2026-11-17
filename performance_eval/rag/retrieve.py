@@ -9,7 +9,7 @@ import random
 from pathlib import Path
 
 from performance_eval.rag.corpus import read_corpus
-from performance_eval.rag.index import Encoder, load_bge_m3, load_index
+from performance_eval.rag.index import Encoder, _sha256_file, load_bge_m3, load_index
 from performance_eval.rag.query import build_query
 
 
@@ -32,8 +32,18 @@ def sample_random(items, passage_ids, k: int = 5, seed: int = 42):
     return out
 
 
+def check_corpus_matches_index(corpus_path: Path, index_meta: dict) -> None:
+    """Exit unless the corpus file is the one the index was built from."""
+    actual = _sha256_file(Path(corpus_path))
+    expected = index_meta.get("corpus_sha256")
+    if actual != expected:
+        raise SystemExit(f"corpus {corpus_path} (sha256 {actual[:12]}) does not match the corpus the "
+                         f"index was built from (sha256 {str(expected)[:12]}); rebuild the index or "
+                         "pass the matching --corpus")
+
+
 def write_passages(path: Path, condition: str, hits: dict, corpus: dict[str, dict],
-                   k: int, seed: int | None, index_meta: dict) -> None:
+                   k: int, seed: int | None, index_meta: dict, split_seed: int | None = None) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -45,7 +55,7 @@ def write_passages(path: Path, condition: str, hits: dict, corpus: dict[str, dic
                                  "title": p["title"], "content": p["content"], "score": score})
             f.write(json.dumps({"item_id": item_id, "condition": condition,
                                 "passages": passages}, ensure_ascii=False) + "\n")
-    meta = {"condition": condition, "k": k, "seed": seed,
+    meta = {"condition": condition, "k": k, "seed": seed, "split_seed": split_seed,
             "retriever": index_meta["retriever"], "index_meta": index_meta,
             "query_format": "question+options"}
     path.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
@@ -61,21 +71,25 @@ def main() -> None:
     ap.add_argument("--corpus", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--k", type=int, default=5)
-    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--split-seed", type=int, default=42,
+                    help="seed of split_test_fewshot (must match the run.py --seed)")
+    ap.add_argument("--seed", type=int, default=42, help="random-control seed only")
     args = ap.parse_args()
 
     load_dotenv()
     items = load_milu_hindi_medicine(hf_token=os.environ.get("HF_TOKEN"))
-    test, _ = split_test_fewshot(items, fewshot_n=10, seed=args.seed)
+    test, _ = split_test_fewshot(items, fewshot_n=10, seed=args.split_seed)
     index, ids, meta = load_index(args.index_dir)
+    check_corpus_matches_index(args.corpus, meta)
     corpus = {p["passage_id"]: p for p in read_corpus(args.corpus)}
 
     hits = retrieve_topk(test, index, ids, load_bge_m3(), k=args.k)
     write_passages(args.out_dir / "passages_rag_k5.jsonl", "rag_k5", hits, corpus,
-                   k=args.k, seed=None, index_meta=meta)
+                   k=args.k, seed=None, index_meta=meta, split_seed=args.split_seed)
     rand = sample_random(test, ids, k=args.k, seed=args.seed)
     write_passages(args.out_dir / "passages_rag_rand_k5.jsonl", "rag_rand_k5", rand, corpus,
-                   k=args.k, seed=args.seed, index_meta=meta)
+                   k=args.k, seed=args.seed, index_meta=meta,
+                   split_seed=args.split_seed)
     print(f"Wrote {len(test)} items x 2 conditions to {args.out_dir}")
 
 

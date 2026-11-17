@@ -52,3 +52,13 @@ def test_build_then_read_round_trips(tmp_path):
     out = tmp_path / "sub" / "c.jsonl"
     build_corpus(tb, sp, out)
     assert read_corpus(out) == tb + sp
+
+
+def test_build_corpus_duplicate_detection_uses_counter_and_names_dupes(tmp_path):
+    def row(i):
+        return {"passage_id": f"textbooks:{i}", "source": "textbooks", "title": "t",
+                "content": "c", "contents": "c"}
+    rows = [row(i) for i in range(5)] + [row(2), row(2), row(4)]
+    with pytest.raises(ValueError, match="textbooks:2") as e:
+        build_corpus(rows, [], tmp_path / "c.jsonl")
+    assert "textbooks:4" in str(e.value)

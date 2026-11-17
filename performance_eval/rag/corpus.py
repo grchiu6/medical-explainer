@@ -7,6 +7,7 @@ with passage_id = "<source>:<original id>". Both sources come from MedRAG.
 import argparse
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 _FETCH_HINT = "scripts/rag_fetch_statpearls.sh"
@@ -51,9 +52,9 @@ def load_statpearls(chunk_dir: Path) -> list[dict]:
 def build_corpus(textbooks: list[dict], statpearls: list[dict], out_path: Path) -> int:
     """Write textbooks then statpearls to JSONL; return the row count."""
     passages = list(textbooks) + list(statpearls)
-    ids = [p["passage_id"] for p in passages]
-    if len(set(ids)) != len(ids):
-        dupes = sorted({i for i in ids if ids.count(i) > 1})
+    counts = Counter(p["passage_id"] for p in passages)
+    dupes = sorted(i for i, c in counts.items() if c > 1)
+    if dupes:
         raise ValueError(f"duplicate passage_ids: {dupes[:5]}")
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
