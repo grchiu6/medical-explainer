@@ -23,7 +23,7 @@ _PASSAGES_HEADER = (
     "Reference passages (in English). They may or may not be relevant to the "
     "question. Use them only if they help."
 )
-_PASSAGE_MAX_CHARS = 1000
+PASSAGE_MAX_CHARS = 1000
 
 
 def _make_letter_list(n_options: int) -> str:
@@ -51,7 +51,7 @@ def build_prompt(
     parts = []
     if passages:
         blocks = [
-            f"[{i}] {p['title']}\n{p['content'][:_PASSAGE_MAX_CHARS]}"
+            f"[{i}] {p['title']}\n{p['content'][:PASSAGE_MAX_CHARS]}"
             for i, p in enumerate(passages, 1)
         ]
         parts.append(_PASSAGES_HEADER + "\n\n" + "\n\n".join(blocks))

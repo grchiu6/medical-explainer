@@ -24,7 +24,7 @@ from performance_eval.data_milu import (
     shuffle_item_options,
     split_test_fewshot,
 )
-from performance_eval.prompts import build_prompt
+from performance_eval.prompts import PASSAGE_MAX_CHARS, build_prompt
 
 FIELDNAMES = ["item_id", "question_with_options", "reference_answer", "model_answer"]
 # Keys allowed to differ on resume: a full run may continue a limited run's rows.
@@ -142,6 +142,22 @@ def load_passages(path: Path, item_ids: list[str], allow_extra: bool = False) ->
     return out
 
 
+def rag_sidecar_fields(passages_file: Path | None) -> dict:
+    """Sidecar keys describing the passages input; all exactly None for non-RAG runs."""
+    if passages_file is None:
+        return {"passages_file": None, "passages_sha256": None, "passages_k": None,
+                "passages_retriever": None, "passages_corpus_sha256": None,
+                "passage_max_chars": None}
+    passages_file = Path(passages_file)
+    meta = json.loads(passages_file.with_suffix(".meta.json").read_text(encoding="utf-8"))
+    return {"passages_file": passages_file.name,
+            "passages_sha256": hashlib.sha256(passages_file.read_bytes()).hexdigest(),
+            "passages_k": meta["k"],
+            "passages_retriever": meta.get("retriever"),
+            "passages_corpus_sha256": (meta.get("index_meta") or {}).get("corpus_sha256"),
+            "passage_max_chars": PASSAGE_MAX_CHARS}
+
+
 def run_condition(
     items: list[dict],
     fewshot_pool: list[dict],
@@ -235,12 +251,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.limit is not None:
         test = test[: args.limit]
 
-    passages = passages_sha = passages_k = None
+    passages = None
     if args.passages_file is not None:
         passages = load_passages(args.passages_file, [it["id"] for it in test],
                                  allow_extra=args.limit is not None)
-        passages_sha = hashlib.sha256(args.passages_file.read_bytes()).hexdigest()
-        passages_k = json.loads(args.passages_file.with_suffix(".meta.json").read_text(encoding="utf-8"))["k"]
 
     output_path = args.output_dir / f"{args.model}_{args.condition}_raw.csv"
     check_or_write_config(output_path, {
@@ -255,9 +269,7 @@ def main(argv: list[str] | None = None) -> None:
         "shuffle_options": args.shuffle_options,
         "limit": args.limit,
         "exemplar_ids": [ex["id"] for ex in exemplars] if args.use_fewshot else [],
-        "passages_file": args.passages_file.name if args.passages_file else None,
-        "passages_sha256": passages_sha,
-        "passages_k": passages_k,
+        **rag_sidecar_fields(args.passages_file),
     })
 
     _set_seed(args.gen_seed)

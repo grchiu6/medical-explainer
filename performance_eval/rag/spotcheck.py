@@ -6,6 +6,8 @@ import os
 import random
 from pathlib import Path
 
+from performance_eval.prompts import PASSAGE_MAX_CHARS
+
 COLUMNS = ["item_id", "question_with_options",
            "passage_1", "passage_2", "passage_3", "passage_4", "passage_5", "relevance"]
 LABELS = ("relevant", "partial", "none")
@@ -24,21 +26,27 @@ def write_sheet(path: Path, items: list[dict], passages: dict) -> None:
         w = csv.writer(f)
         w.writerow(COLUMNS)
         for it in items:
-            cells = [f"{p['title']}\n{p['content']}" for p in passages[it["id"]]]
+            cells = [f"{p['title']}\n{p['content'][:PASSAGE_MAX_CHARS]}" for p in passages[it["id"]]]
             cells += [""] * (5 - len(cells))
             w.writerow([it["id"], it["question_with_options"], *cells[:5], ""])
 
 
-def summarize(path: Path) -> dict:
+def summarize(path: Path, expected_n: int = 20) -> dict:
     counts = {l: 0 for l in LABELS}
     with open(path, encoding="utf-8-sig", newline="") as f:
-        for row in csv.DictReader(f):
-            label = (row.get("relevance") or "").strip().lower()
-            if label not in counts:
-                raise ValueError(
-                    f"item {row.get('item_id')!r}: invalid relevance label {row.get('relevance')!r}; "
-                    f"expected one of {LABELS}")
-            counts[label] += 1
+        rows = list(csv.DictReader(f))
+    ids = [r.get("item_id") for r in rows]
+    if len(rows) != expected_n:
+        raise ValueError(f"expected {expected_n} rows, found {len(rows)} (truncated or wrong sheet?)")
+    if len(set(ids)) != len(ids):
+        raise ValueError("item_ids are not unique (duplicate rows in sheet)")
+    for row in rows:
+        label = (row.get("relevance") or "").strip().lower()
+        if label not in counts:
+            raise ValueError(
+                f"item {row.get('item_id')!r}: invalid relevance label {row.get('relevance')!r}; "
+                f"expected one of {LABELS}")
+        counts[label] += 1
     return {**counts, "passes_gate": counts["relevant"] >= GATE_MIN_RELEVANT}
 
 
@@ -52,6 +60,7 @@ def main(argv=None) -> int:
     mk.add_argument("--seed", type=int, default=42)
     sm = sub.add_parser("summarize")
     sm.add_argument("sheet", type=Path)
+    sm.add_argument("--n", type=int, default=20)
     args = ap.parse_args(argv)
 
     if args.cmd == "make":
@@ -69,7 +78,7 @@ def main(argv=None) -> int:
         write_sheet(args.out, [by_id[i] for i in ids], passages)
         print(f"wrote {len(ids)} rows to {args.out}")
     else:
-        r = summarize(args.sheet)
+        r = summarize(args.sheet, expected_n=args.n)
         print(f"relevant={r['relevant']} partial={r['partial']} none={r['none']}")
         print("GATE: PASS" if r["passes_gate"] else "GATE: FAIL — stop and return to design")
     return 0

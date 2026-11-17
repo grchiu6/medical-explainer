@@ -339,8 +339,24 @@ def test_old_sidecar_without_passage_keys_still_resumes(tmp_path):
     out = tmp_path / "himed_c0_baseline_raw.csv"
     out.write_text("item_id,question_with_options,reference_answer,model_answer\nm1,Q,A,A\n", encoding="utf-8")
     run_mod.config_sidecar_path(out).write_text(json.dumps(_C0_SIDECAR), encoding="utf-8")
-    new = dict(_C0_SIDECAR, passages_file=None, passages_sha256=None, passages_k=None)
+    new = dict(_C0_SIDECAR, passages_file=None, passages_sha256=None, passages_k=None,
+               passages_retriever=None, passages_corpus_sha256=None, passage_max_chars=None)
     check_or_write_config(out, new)  # no raise
+
+
+def test_rag_sidecar_fields_none_for_non_rag_and_set_for_rag(tmp_path):
+    from performance_eval.prompts import PASSAGE_MAX_CHARS
+
+    assert run_mod.rag_sidecar_fields(None) == {
+        "passages_file": None, "passages_sha256": None, "passages_k": None,
+        "passages_retriever": None, "passages_corpus_sha256": None, "passage_max_chars": None}
+    p = _write_passages(tmp_path, ["a"], k=2)
+    p.with_suffix(".meta.json").write_text(json.dumps(
+        {"k": 2, "retriever": "bge-m3", "index_meta": {"corpus_sha256": "abc"}}), encoding="utf-8")
+    f = run_mod.rag_sidecar_fields(p)
+    assert f["passages_file"] == p.name and f["passages_k"] == 2
+    assert f["passages_retriever"] == "bge-m3" and f["passages_corpus_sha256"] == "abc"
+    assert f["passage_max_chars"] == PASSAGE_MAX_CHARS and len(f["passages_sha256"]) == 64
 
 
 def test_resume_refused_when_passages_file_changed(tmp_path):
