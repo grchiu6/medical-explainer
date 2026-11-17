@@ -11,3 +11,5 @@ datasets>=2.18.0
 pytest>=8.0.0
 scipy>=1.11
 wordfreq>=3.0
+sentence-transformers>=3.0
+faiss-cpu>=1.8
