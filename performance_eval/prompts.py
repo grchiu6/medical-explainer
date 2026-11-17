@@ -19,6 +19,12 @@ _COT_INSTRUCTION = (
     "correct answer ({letters}). Do not write anything after that line."
 )
 
+_PASSAGES_HEADER = (
+    "Reference passages (in English). They may or may not be relevant to the "
+    "question. Use them only if they help."
+)
+_PASSAGE_MAX_CHARS = 1000
+
 
 def _make_letter_list(n_options: int) -> str:
     """'A, B, or C' style list for the first n_options letters."""
@@ -33,13 +39,22 @@ def build_prompt(
     n_options: int,
     use_cot: bool = False,
     exemplars: list[dict] | None = None,
+    passages: list[dict] | None = None,
 ) -> str:
     """Build the prompt for one item under one condition.
 
     exemplars: optional list of {"question_with_options", "answer_letter"}
     rendered before the target question, in the order given.
+    passages: optional retrieved passages ({"title", "content"}); rendered as a
+    reference block that always comes first. None leaves the prompt unchanged.
     """
     parts = []
+    if passages:
+        blocks = [
+            f"[{i}] {p['title']}\n{p['content'][:_PASSAGE_MAX_CHARS]}"
+            for i, p in enumerate(passages, 1)
+        ]
+        parts.append(_PASSAGES_HEADER + "\n\n" + "\n\n".join(blocks))
     if exemplars:
         blocks = [
             f"Question: {ex['question_with_options']}\nAnswer: {ex['answer_letter']}"

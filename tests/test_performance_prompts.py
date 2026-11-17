@@ -56,3 +56,30 @@ def test_cot_prompt_ends_with_reasoning_cue_not_bare_answer():
         p = build_prompt("प्रश्न?\nA. एक\nB. दो", 2, use_cot=True, exemplars=e)
         assert p.rstrip().endswith(cue)
         assert not p.rstrip().endswith("Answer")
+
+
+_GQ = "प्रश्न?\nA. a\nB. b\nC. c\nD. d"
+# Captured from build_prompt BEFORE the passages change.
+_GOLDEN_BASELINE = 'You are answering a multiple-choice medical question in Hindi. Read the question and the options carefully, then respond with ONLY the letter of the correct answer (A, B, C, or D). Do not explain. Do not write anything except the single letter.\n\nQuestion: प्रश्न?\nA. a\nB. b\nC. c\nD. d\n\nAnswer (single letter only):'
+_GOLDEN_COT = 'You are answering a multiple-choice medical question in Hindi. Read the question and the options carefully. Think step by step in Hindi. On the final line, write exactly `Answer: X` where X is the single letter of the correct answer (A, B, C, or D). Do not write anything after that line.\n\nQuestion: प्रश्न?\nA. a\nB. b\nC. c\nD. d\n\nReasoning (step by step, in Hindi):'
+
+
+def test_prompt_without_passages_unchanged():
+    assert build_prompt(_GQ, 4) == _GOLDEN_BASELINE
+    assert build_prompt(_GQ, 4, passages=None) == _GOLDEN_BASELINE
+    assert build_prompt(_GQ, 4, use_cot=True, passages=None) == _GOLDEN_COT
+
+
+def test_prompt_with_passages_starts_with_block_and_truncates():
+    p = build_prompt(_GQ, 4, passages=[{"title": "T1", "content": "x" * 1500}, {"title": "T2", "content": "y"}])
+    assert p.startswith("Reference passages (in English). They may or may not be relevant to the question. Use them only if they help.\n\n[1] T1\n")
+    assert "[1] T1\n" + "x" * 1000 + "\n\n[2] T2\ny" in p and "x" * 1001 not in p
+    assert p.endswith("Answer (single letter only):")
+    assert _GOLDEN_BASELINE in p
+
+
+def test_passages_block_comes_first_with_cot_and_fewshot():
+    ex = [{"question_with_options": "E?\nA. a", "answer_letter": "A"}]
+    p = build_prompt(_GQ, 4, use_cot=True, exemplars=ex, passages=[{"title": "T", "content": "c"}])
+    assert p.startswith("Reference passages") and p.index("Here are example questions") > p.index("[1] T")
+    assert p.endswith("Reasoning (step by step, in Hindi):")

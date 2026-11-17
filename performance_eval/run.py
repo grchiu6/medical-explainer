@@ -9,6 +9,7 @@ configuration is refused.
 
 import argparse
 import csv
+import hashlib
 import importlib
 import json
 import os
@@ -101,6 +102,43 @@ def validate_args(
         raise ValueError("--temperature/--top-p require --sample-decoding")
 
 
+def load_passages(path: Path, item_ids: list[str]) -> dict[str, list[dict]]:
+    """Load retrieved passages for exactly these item ids, in rank order.
+
+    Needs the sidecar ``<path>.meta.json`` (k is read from it). Raises SystemExit
+    on a missing meta file, duplicate ids, missing/extra ids, or a passage list
+    whose length differs from k.
+    """
+    path = Path(path)
+    meta_path = path.with_suffix(".meta.json")
+    if not meta_path.is_file():
+        raise SystemExit(f"{meta_path} is missing; it is required to check k for {path.name}")
+    k = json.loads(meta_path.read_text(encoding="utf-8")).get("k")
+    if not isinstance(k, int):
+        raise SystemExit(f"{meta_path} has no integer 'k'")
+    out: dict[str, list[dict]] = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            iid = rec["item_id"]
+            if iid in out:
+                raise SystemExit(f"{path.name}: duplicate item_id {iid!r}")
+            out[iid] = sorted(rec["passages"], key=lambda p: p["rank"])
+    wanted = set(item_ids)
+    missing = sorted(wanted - set(out))
+    extra = sorted(set(out) - wanted)
+    if missing:
+        raise SystemExit(f"{path.name}: missing passages for {len(missing)} item(s), e.g. {missing[:3]}")
+    if extra:
+        raise SystemExit(f"{path.name}: has {len(extra)} item id(s) not in this run, e.g. {extra[:3]}")
+    bad = sorted(i for i, ps in out.items() if len(ps) != k)
+    if bad:
+        raise SystemExit(f"{path.name}: {len(bad)} item(s) do not have k={k} passages, e.g. {bad[:3]}")
+    return out
+
+
 def run_condition(
     items: list[dict],
     fewshot_pool: list[dict],
@@ -109,6 +147,7 @@ def run_condition(
     use_fewshot: bool,
     gen_kwargs: dict,
     output_path: Path,
+    passages: dict[str, list[dict]] | None = None,
 ) -> None:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,6 +169,7 @@ def run_condition(
                 item["n_options"],
                 use_cot=use_cot,
                 exemplars=fewshot_pool if use_fewshot else None,
+                passages=passages[item["id"]] if passages is not None else None,
             )
             answer = get_answer_fn(prompt, gen_kwargs=gen_kwargs)
             writer.writerow({
@@ -164,6 +204,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--shuffle-options", action="store_true",
                         help="shuffle option order of test items (position-bias check); exemplars stay native")
     parser.add_argument("--limit", type=int, default=None, help="only run the first N test items")
+    parser.add_argument("--passages-file", type=Path, default=None,
+                        help="RAG: JSONL of retrieved passages (with a .meta.json sidecar) to prepend to each prompt")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).parent / "outputs" / "milu_hi_med")
     args = parser.parse_args(argv)
 
@@ -189,6 +231,12 @@ def main(argv: list[str] | None = None) -> None:
     if args.limit is not None:
         test = test[: args.limit]
 
+    passages = passages_sha = passages_k = None
+    if args.passages_file is not None:
+        passages = load_passages(args.passages_file, [it["id"] for it in test])
+        passages_sha = hashlib.sha256(args.passages_file.read_bytes()).hexdigest()
+        passages_k = json.loads(args.passages_file.with_suffix(".meta.json").read_text(encoding="utf-8"))["k"]
+
     output_path = args.output_dir / f"{args.model}_{args.condition}_raw.csv"
     check_or_write_config(output_path, {
         "model": args.model,
@@ -202,11 +250,15 @@ def main(argv: list[str] | None = None) -> None:
         "shuffle_options": args.shuffle_options,
         "limit": args.limit,
         "exemplar_ids": [ex["id"] for ex in exemplars] if args.use_fewshot else [],
+        "passages_file": args.passages_file.name if args.passages_file else None,
+        "passages_sha256": passages_sha,
+        "passages_k": passages_k,
     })
 
     _set_seed(args.gen_seed)
     get_answer_fn = _load_model_fn(args.model)
-    run_condition(test, exemplars, get_answer_fn, args.use_cot, args.use_fewshot, gen_kwargs, output_path)
+    run_condition(test, exemplars, get_answer_fn, args.use_cot, args.use_fewshot, gen_kwargs, output_path,
+                  passages=passages)
 
 
 if __name__ == "__main__":

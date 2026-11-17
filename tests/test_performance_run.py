@@ -40,7 +40,7 @@ def test_run_condition_resumes_by_item_id_skipping_done_rows(tmp_path):
 def test_run_condition_passes_fewshot_pool_into_prompt_when_enabled(tmp_path, monkeypatch):
     captured = {}
 
-    def fake_build_prompt(question_with_options, n_options, use_cot=False, exemplars=None):
+    def fake_build_prompt(question_with_options, n_options, use_cot=False, exemplars=None, passages=None):
         captured["exemplars"] = exemplars
         return "PROMPT"
 
@@ -277,3 +277,86 @@ def test_main_resume_csv_with_rows_but_no_sidecar_refuses(tmp_path, fakes):
     with pytest.raises(SystemExit, match="config.json"):
         run_mod.main(["--model", "himed", "--condition", "c", "--output-dir", str(tmp_path)])
     assert fakes["prompts"] == []
+
+
+# ---- passages (RAG) ----
+import hashlib
+import json
+
+from performance_eval.run import check_or_write_config, load_passages
+
+_C0_SIDECAR = json.loads("""{
+  "model": "himed", "condition": "c0_baseline", "use_cot": false, "use_fewshot": false,
+  "fewshot_n": 10,
+  "gen_kwargs": {"do_sample": false, "temperature": null, "top_p": null, "repetition_penalty": 1.0},
+  "seed": 42, "gen_seed": 42, "shuffle_options": false, "limit": null, "exemplar_ids": []
+}""")
+
+
+def _write_passages(tmp_path, ids, k=2, meta=True, extra_lines=()):
+    p = tmp_path / "passages_rag_k5.jsonl"
+    lines = [json.dumps({"item_id": i, "condition": "rag_k5", "passages": [
+        {"rank": r + 1, "passage_id": f"s:{i}{r}", "source": "s", "title": f"T{r}", "content": f"c{r}", "score": 1.0}
+        for r in range(k)]}) for i in ids] + list(extra_lines)
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if meta:
+        p.with_suffix(".meta.json").write_text(json.dumps({"condition": "rag_k5", "k": k, "seed": 42,
+            "retriever": "bge-m3", "index_meta": {}, "query_format": "q"}), encoding="utf-8")
+    return p
+
+
+def test_load_passages_returns_rank_ordered_dict(tmp_path):
+    p = _write_passages(tmp_path, ["a", "b"])
+    got = load_passages(p, ["a", "b"])
+    assert set(got) == {"a", "b"} and [x["rank"] for x in got["a"]] == [1, 2]
+
+
+def test_load_passages_refuses_missing_extra_or_wrong_k(tmp_path):
+    p = _write_passages(tmp_path, ["a", "b"])
+    with pytest.raises(SystemExit):
+        load_passages(p, ["a", "b", "c"])  # missing item
+    with pytest.raises(SystemExit):
+        load_passages(p, ["a"])  # extra id in file
+    p2 = _write_passages(tmp_path, ["a"], k=2)
+    meta = p2.with_suffix(".meta.json")
+    meta.write_text(json.dumps({"k": 5}), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        load_passages(p2, ["a"])  # wrong k
+
+
+def test_load_passages_refuses_duplicates_and_missing_meta(tmp_path):
+    dup = _write_passages(tmp_path, ["a"])
+    dup.write_text(dup.read_text(encoding="utf-8") * 2, encoding="utf-8")
+    with pytest.raises(SystemExit):
+        load_passages(dup, ["a"])
+    (tmp_path / "sub").mkdir()
+    nometa = _write_passages(tmp_path / "sub", ["a"], meta=False)
+    with pytest.raises(SystemExit):
+        load_passages(nometa, ["a"])
+
+
+def test_old_sidecar_without_passage_keys_still_resumes(tmp_path):
+    out = tmp_path / "himed_c0_baseline_raw.csv"
+    out.write_text("item_id,question_with_options,reference_answer,model_answer\nm1,Q,A,A\n", encoding="utf-8")
+    run_mod.config_sidecar_path(out).write_text(json.dumps(_C0_SIDECAR), encoding="utf-8")
+    new = dict(_C0_SIDECAR, passages_file=None, passages_sha256=None, passages_k=None)
+    check_or_write_config(out, new)  # no raise
+
+
+def test_resume_refused_when_passages_file_changed(tmp_path):
+    out = tmp_path / "o.csv"
+    out.write_text("item_id,question_with_options,reference_answer,model_answer\nm1,Q,A,A\n", encoding="utf-8")
+    base = dict(_C0_SIDECAR, passages_file="p.jsonl", passages_sha256="aaa", passages_k=5)
+    run_mod.config_sidecar_path(out).write_text(json.dumps(base), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        check_or_write_config(out, dict(base, passages_sha256="bbb"))
+
+
+def test_run_condition_puts_each_items_passages_in_its_prompt(tmp_path):
+    items = [{"id": f"m{i}", "question_with_options": f"Q{i}?", "answer_letter": "A", "n_options": 2} for i in (1, 2)]
+    passages = {"m1": [{"title": "TitleOne", "content": "body1"}], "m2": [{"title": "TitleTwo", "content": "body2"}]}
+    calls = []
+    run_condition(items, [], lambda prompt, gen_kwargs=None: calls.append(prompt) or "A", False, False,
+                  {}, tmp_path / "o.csv", passages=passages)
+    assert "TitleOne" in calls[0] and "TitleTwo" not in calls[0]
+    assert "TitleTwo" in calls[1] and calls[1].startswith("Reference passages")
