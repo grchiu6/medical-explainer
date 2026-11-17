@@ -360,3 +360,15 @@ def test_run_condition_puts_each_items_passages_in_its_prompt(tmp_path):
                   {}, tmp_path / "o.csv", passages=passages)
     assert "TitleOne" in calls[0] and "TitleTwo" not in calls[0]
     assert "TitleTwo" in calls[1] and calls[1].startswith("Reference passages")
+
+
+def test_load_passages_allow_extra_returns_only_requested_ids(tmp_path):
+    p = _write_passages(tmp_path, ["a", "b", "c"])
+    got = load_passages(p, ["a", "b"], allow_extra=True)
+    assert set(got) == {"a", "b"}
+
+
+def test_load_passages_allow_extra_still_refuses_missing_requested_id(tmp_path):
+    p = _write_passages(tmp_path, ["a", "b"])
+    with pytest.raises(SystemExit):
+        load_passages(p, ["a", "z"], allow_extra=True)

@@ -102,12 +102,14 @@ def validate_args(
         raise ValueError("--temperature/--top-p require --sample-decoding")
 
 
-def load_passages(path: Path, item_ids: list[str]) -> dict[str, list[dict]]:
+def load_passages(path: Path, item_ids: list[str], allow_extra: bool = False) -> dict[str, list[dict]]:
     """Load retrieved passages for exactly these item ids, in rank order.
 
     Needs the sidecar ``<path>.meta.json`` (k is read from it). Raises SystemExit
     on a missing meta file, duplicate ids, missing/extra ids, or a passage list
-    whose length differs from k.
+    whose length differs from k. With allow_extra, ids in the file that are not in
+    item_ids are ignored (for --limit smoke runs against the full file) and only the
+    requested ids are returned; all other checks still apply.
     """
     path = Path(path)
     meta_path = path.with_suffix(".meta.json")
@@ -131,8 +133,9 @@ def load_passages(path: Path, item_ids: list[str]) -> dict[str, list[dict]]:
     extra = sorted(set(out) - wanted)
     if missing:
         raise SystemExit(f"{path.name}: missing passages for {len(missing)} item(s), e.g. {missing[:3]}")
-    if extra:
+    if extra and not allow_extra:
         raise SystemExit(f"{path.name}: has {len(extra)} item id(s) not in this run, e.g. {extra[:3]}")
+    out = {i: out[i] for i in item_ids}
     bad = sorted(i for i, ps in out.items() if len(ps) != k)
     if bad:
         raise SystemExit(f"{path.name}: {len(bad)} item(s) do not have k={k} passages, e.g. {bad[:3]}")
@@ -205,7 +208,8 @@ def main(argv: list[str] | None = None) -> None:
                         help="shuffle option order of test items (position-bias check); exemplars stay native")
     parser.add_argument("--limit", type=int, default=None, help="only run the first N test items")
     parser.add_argument("--passages-file", type=Path, default=None,
-                        help="RAG: JSONL of retrieved passages (with a .meta.json sidecar) to prepend to each prompt")
+                        help="RAG: JSONL of retrieved passages (with a .meta.json sidecar) to prepend to each prompt. "
+                             "With --limit, extra items in the file are ignored; otherwise they are refused")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).parent / "outputs" / "milu_hi_med")
     args = parser.parse_args(argv)
 
@@ -233,7 +237,8 @@ def main(argv: list[str] | None = None) -> None:
 
     passages = passages_sha = passages_k = None
     if args.passages_file is not None:
-        passages = load_passages(args.passages_file, [it["id"] for it in test])
+        passages = load_passages(args.passages_file, [it["id"] for it in test],
+                                 allow_extra=args.limit is not None)
         passages_sha = hashlib.sha256(args.passages_file.read_bytes()).hexdigest()
         passages_k = json.loads(args.passages_file.with_suffix(".meta.json").read_text(encoding="utf-8"))["k"]
 
