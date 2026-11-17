@@ -25,8 +25,8 @@
 #     # Position-bias check: shuffled option order, under its own condition label.
 #     sbatch scripts/performance_milu_run.sh himed c0_shuffled --shuffle-options
 #     # RAG (see performance_eval/docs/2026-11-16-rag-design.md). Retrieval first: sbatch scripts/rag_retrieve.sh
-#     sbatch scripts/performance_milu_run.sh himed rag_rand_k5 --passages-file $SCRATCH/performance_eval_outputs/milu_hi_med/passages_rag_rand_k5.jsonl
-#     sbatch scripts/performance_milu_run.sh himed rag_k5 --passages-file $SCRATCH/performance_eval_outputs/milu_hi_med/passages_rag_k5.jsonl
+#     sbatch scripts/performance_milu_run.sh himed rag_rand_k5 --passages-file /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/passages_rag_rand_k5.jsonl
+#     sbatch scripts/performance_milu_run.sh himed rag_k5 --passages-file /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/passages_rag_k5.jsonl
 #
 # Then compare conditions. The analyze mode must match the condition:
 # first_letter for non-CoT conditions, after_marker for CoT conditions.

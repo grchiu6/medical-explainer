@@ -1,0 +1,10 @@
+# Standalone env for the RAG pipeline (.venv-rag): corpus build, index build, retrieval.
+# Setup: python -m venv .venv-rag && .venv-rag/bin/pip install -r requirements-rag.txt
+# torch comes in via sentence-transformers; on PACE install a CUDA build matching the
+# cluster CUDA first (pip install torch ...) so the encoder runs on the GPU.
+sentence-transformers>=3.0
+faiss-cpu>=1.8
+datasets>=2.18.0
+python-dotenv>=1.0.0
+numpy
+tqdm

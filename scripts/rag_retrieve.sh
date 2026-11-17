@@ -46,8 +46,15 @@ if [ -z "${HF_TOKEN:-}" ] && [ ! -f "$HF_HOME/token" ]; then
     exit 1
 fi
 
-source "$SLURM_SUBMIT_DIR/.venv/bin/activate"
+if [ ! -f "$SLURM_SUBMIT_DIR/.venv-rag/bin/activate" ]; then
+    echo "ERROR: $SLURM_SUBMIT_DIR/.venv-rag is missing. Create it with:"
+    echo "       python -m venv .venv-rag && .venv-rag/bin/pip install -r requirements-rag.txt"
+    echo "       (install a CUDA build of torch matching the cluster first)"
+    exit 1
+fi
+source "$SLURM_SUBMIT_DIR/.venv-rag/bin/activate"
 echo "Python: $(which python) $(python --version)"
+python -c "import faiss, sentence_transformers" || { echo "ERROR: .venv-rag lacks faiss/sentence-transformers; pip install -r requirements-rag.txt"; exit 1; }
 
 python -m performance_eval.rag.retrieve \
     --index-dir "$SCRATCH/rag/index_bge_m3" \

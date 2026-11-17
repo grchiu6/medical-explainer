@@ -48,10 +48,18 @@ cd "$SLURM_SUBMIT_DIR"
 export HF_HOME="$SCRATCH/hf_cache"
 export TRITON_CACHE_DIR="$SCRATCH/triton_cache"
 export PIP_CACHE_DIR="$SCRATCH/pip_cache"
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 mkdir -p "$HF_HOME" "$TRITON_CACHE_DIR" "$PIP_CACHE_DIR"
 
-source "$SLURM_SUBMIT_DIR/.venv/bin/activate"
+if [ ! -f "$SLURM_SUBMIT_DIR/.venv-rag/bin/activate" ]; then
+    echo "ERROR: $SLURM_SUBMIT_DIR/.venv-rag is missing. Create it with:"
+    echo "       python -m venv .venv-rag && .venv-rag/bin/pip install -r requirements-rag.txt"
+    echo "       (install a CUDA build of torch matching the cluster first)"
+    exit 1
+fi
+source "$SLURM_SUBMIT_DIR/.venv-rag/bin/activate"
 echo "Python: $(which python) $(python --version)"
+python -c "import faiss, sentence_transformers" || { echo "ERROR: .venv-rag lacks faiss/sentence-transformers; pip install -r requirements-rag.txt"; exit 1; }
 python -c "import torch; print('PyTorch:', torch.__version__)"
 
 python -m performance_eval.rag.corpus --statpearls-dir "$STATPEARLS_DIR" --out "$CORPUS"
