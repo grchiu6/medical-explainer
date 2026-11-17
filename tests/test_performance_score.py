@@ -13,6 +13,28 @@ def test_after_marker_falls_back_to_last_standalone_letter_when_marker_missing()
     assert extract_answer(text, mode="after_marker") == "B"
 
 
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # Real HiMed C2 responses (2026-11-16): the old last-letter fallback
+        # read the letter inside the option text (B1, C, A) instead of the label.
+        ("## Thinking\nसोच...\n## Response\nA. विटामिन B1 की कमी", "A"),
+        ("## Thinking\nसोच...\n## Response\nD. विटामिन C", "D"),
+        ("## Thinking\nसोच...\n## Response\nB. स्कर्वी ∶ विटामिन C", "B"),
+        ("(C) विटामिन D", "C"),
+        ("B) विटामिन A", "B"),
+        ("D", "D"),
+    ],
+)
+def test_after_marker_without_marker_uses_leading_option_label(text, expected):
+    assert extract_answer(text, mode="after_marker") == expected
+
+
+def test_after_marker_leading_english_article_is_not_an_option_label():
+    text = "A patient with these symptoms... so option C is right"
+    assert extract_answer(text, mode="after_marker") == "C"
+
+
 def test_after_marker_returns_none_when_no_letter_anywhere():
     text = "यह उत्तर देना मुश्किल है।"
     assert extract_answer(text, mode="after_marker") is None

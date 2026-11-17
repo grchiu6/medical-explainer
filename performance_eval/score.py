@@ -17,6 +17,9 @@ from score_mcq import extract_letter as _extract_first_letter
 
 _MARKER_RE = re.compile(r"(?:Answer|उत्तर)\s*[:：]?\s*([A-Ja-j])(?![A-Za-z])", re.IGNORECASE)
 _LAST_LETTER_RE = re.compile(r"(?<![A-Za-z])([A-Ja-j])(?![A-Za-z])")
+# A response that opens with an option label: "A.", "(B)", "C)", "D:", or a bare "D".
+# Requires punctuation or end-of-text after the letter so an English "A patient" doesn't match.
+_LEADING_LABEL_RE = re.compile(r"^\(?([A-J])(?:[.):：]|\s*$)")
 _VALID_REFERENCE_RE = re.compile(r"[A-J]")
 _OPTION_LINE_RE = re.compile(r"^[A-J]\. ", re.MULTILINE)
 
@@ -34,6 +37,12 @@ def _extract(text: str, mode: str) -> tuple[str | None, bool]:
     if marker_matches:
         # Last match, in case the model restates its answer.
         return marker_matches[-1].group(1).upper(), True
+    # No marker: if the response opens with an option label (HiMed's usual
+    # "## Response\nB. <option text>"), that is the answer. The last-letter
+    # fallback would read letters inside the option text ("विटामिन B1", "विटामिन C").
+    leading = _LEADING_LABEL_RE.match(response.strip())
+    if leading:
+        return leading.group(1), False
     letter_matches = list(_LAST_LETTER_RE.finditer(response))
     if letter_matches:
         return letter_matches[-1].group(1).upper(), False
