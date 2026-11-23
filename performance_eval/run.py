@@ -32,6 +32,13 @@ FIELDNAMES = ["item_id", "question_with_options", "reference_answer", "model_ans
 _CONFIG_EXEMPT_KEYS = {"limit"}
 
 
+_API_MODELS = {"gemini_flash"}
+
+
+def _load_model_module(name: str):
+    return importlib.import_module(f"models.{name}")
+
+
 def _load_model_fn(name: str) -> Callable[..., str]:
     """Import models.<name> lazily (it imports torch) and return its get_answer."""
     return importlib.import_module(f"models.{name}").get_answer
@@ -205,7 +212,7 @@ def run_condition(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run a model on a MILU MCQ condition")
-    parser.add_argument("--model", required=True, choices=["himed", "nanda"])
+    parser.add_argument("--model", required=True, choices=["himed", "nanda", "gemini_flash"])
     parser.add_argument("--condition", required=True, help="label used in the output filename, e.g. c0_baseline")
     parser.add_argument("--use-cot", action="store_true")
     parser.add_argument("--use-fewshot", action="store_true")
@@ -261,8 +268,10 @@ def main(argv: list[str] | None = None) -> None:
         passages = load_passages(args.passages_file, [it["id"] for it in test],
                                  allow_extra=args.limit is not None or args.exclude_file is not None)
 
+    api_mod = _load_model_module(args.model) if args.model in _API_MODELS else None
     output_path = args.output_dir / f"{args.model}_{args.condition}_raw.csv"
     check_or_write_config(output_path, {
+        "model_id": getattr(api_mod, "MODEL_ID", None),
         "model": args.model,
         "condition": args.condition,
         "use_cot": args.use_cot,
@@ -280,6 +289,17 @@ def main(argv: list[str] | None = None) -> None:
 
     _set_seed(args.gen_seed)
     get_answer_fn = _load_model_fn(args.model)
+    if api_mod is not None:
+        # Token usage + cost persist next to the raw CSV and accumulate across resumes.
+        usage_path = output_path.with_name(output_path.name + ".usage.json")
+        api_mod.load_usage(usage_path)
+        answer = get_answer_fn
+
+        def get_answer_fn(prompt, gen_kwargs=None):
+            try:
+                return answer(prompt, gen_kwargs=gen_kwargs)
+            finally:
+                api_mod.save_usage(usage_path)
     run_condition(test, exemplars, get_answer_fn, args.use_cot, args.use_fewshot, gen_kwargs, output_path,
                   passages=passages)
 
