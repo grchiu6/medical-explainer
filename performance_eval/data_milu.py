@@ -103,3 +103,29 @@ def shuffle_item_options(item: dict, seed: int) -> dict:
     out["answer_letter"] = answer
     out["question_with_options"] = _format_qwo(item["question"], options)
     return out
+
+
+def load_english_items(translations_path, hindi_items: list[dict], drop_ids=frozenset()) -> list[dict]:
+    """English versions of hindi_items from a translations JSONL (item_id, question, options).
+
+    Keeps id, answer_letter and n_options, so English and Hindi runs are paired by item_id.
+    Items in drop_ids are skipped; any other item without a translation is an error."""
+    import json
+    from pathlib import Path
+
+    recs = {}
+    for line in Path(translations_path).read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            r = json.loads(line)
+            recs[r["item_id"]] = r
+    kept = [it for it in hindi_items if it["id"] not in drop_ids]
+    missing = [it["id"] for it in kept if it["id"] not in recs]
+    if missing:
+        raise ValueError(f"{len(missing)} item(s) have no translation, e.g. {missing[:5]}")
+    out = []
+    for it in kept:
+        r = recs[it["id"]]
+        options = {l: _clean(r["options"][l]) for l in sorted(it["options"])}
+        out.append({**it, "question": r["question"], "options": options,
+                    "question_with_options": _format_qwo(r["question"], options)})
+    return out
