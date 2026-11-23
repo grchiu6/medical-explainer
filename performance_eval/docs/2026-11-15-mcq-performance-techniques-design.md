@@ -21,7 +21,7 @@ This track asks a cleaner, prior question: **can these models answer a Hindi med
 
 - **Not** literacy-level adaptation, readability, or register — that stays in `literacy_eval/`.
 - **Not** open-ended generation scoring (no judge in this track). Open-ended revisit is deferred.
-- **Not** fine-tuning or training. Inference-time techniques only.
+- **Not** fine-tuning or training. Inference-time techniques only. *(Update 2026-11-22: advisor prefers model improvement; fine-tuning is in scope for the next phase if the step-1 diagnostic (`2026-11-22-step1-diagnostic-plan.md`) points to the open models. This document still covers only C0–C4.)*
 - **Anti-goal:** bundling multiple techniques into one run such that a gain can't be attributed. If we can't say *which* technique helped, the experiment has failed its purpose.
 - **Anti-goal:** any technique that leaks the answer into the prompt (esp. RAG retrieving from the answer key / explanation field). A leaked result is worse than no result.
 
