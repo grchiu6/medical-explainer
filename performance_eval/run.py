@@ -234,7 +234,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--shuffle-options", action="store_true",
                         help="shuffle option order of test items (position-bias check); exemplars stay native")
     parser.add_argument("--limit", type=int, default=None, help="only run the first N test items")
-    parser.add_argument("--exclude-file", type=Path, default=None,
+    parser.add_argument("--exclude-file", type=Path, action="append", default=None,
                         help="CSV (item_id, reason) of test items to drop after the split (see data/excluded_items.csv)")
     parser.add_argument("--passages-file", type=Path, default=None,
                         help="RAG: JSONL of retrieved passages (with a .meta.json sidecar) to prepend to each prompt. "
@@ -273,7 +273,8 @@ def main(argv: list[str] | None = None) -> None:
     test, pool = split_test_fewshot(items, fewshot_n=args.fewshot_n, seed=args.seed)
     exemplars = pick_exemplars(pool, seed=args.seed)
     if args.exclude_file is not None:
-        test = apply_exclusions(test, load_exclusions(args.exclude_file))
+        for f in args.exclude_file:
+            test = apply_exclusions(test, load_exclusions(f))
     if args.shuffle_options:
         test = [shuffle_item_options(it, seed=args.seed) for it in test]
     if args.limit is not None:

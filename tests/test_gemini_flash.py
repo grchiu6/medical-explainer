@@ -32,7 +32,8 @@ class FakeClient:
 
 
 @pytest.fixture
-def fake(monkeypatch):
+def fake(monkeypatch, tmp_path):
+    monkeypatch.setattr(gf, "TOTAL_PATH", tmp_path / "gemini_total_usage.json")
     def install(*responses):
         client = FakeClient(responses)
         monkeypatch.setattr(gf, "_get_client", lambda: client)
@@ -168,3 +169,15 @@ def test_rate_limit_is_retried(fake):
     client = fake(_ApiError(429), _resp(text="D"))
     assert gf.get_answer("p") == "D"
     assert len(client.calls) == 2
+
+
+def test_budget_is_global_across_runs(fake, monkeypatch, tmp_path):
+    """$2 is Grace's cap on TOTAL spend, not per output file."""
+    monkeypatch.setattr(gf, "TOTAL_PATH", tmp_path / "total.json")
+    fake(_resp(prompt=1_000_000, out=0, thoughts=0), _resp())
+    gf.get_answer("p")  # $0.75 recorded in the global total
+    gf.USAGE.update(gf._empty_usage())  # a fresh run with its own per-run file
+    monkeypatch.setenv("GEMINI_BUDGET_USD", "0.5")
+    with pytest.raises(gf.BudgetExceeded):
+        gf.get_answer("p")
+    assert gf.total_cost() == pytest.approx(0.75)

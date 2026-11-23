@@ -62,3 +62,15 @@ def test_missing_cell_skips_comparison_and_says_incomplete():
     comps = run_comparisons(cells)
     assert comps[4]["skipped"] is True
     assert "incomplete" in decide(cells, comps)
+
+
+def test_significant_negative_result_shown_in_table():
+    from performance_eval.diagnostic import build_report
+
+    cells = _cells(80, 70, 70, 40, 70, 80)  # himed much worse in English
+    comps = run_comparisons(cells)
+    assert comps[2]["accuracy_delta"] < 0 and comps[2]["significant"] is True
+    report = build_report(cells, comps, decide(cells, comps), [], [], 5)
+    row = next(line for line in report.splitlines() if line.startswith("| 3 |"))
+    assert "yes (worse)" in row
+    assert "Hindi is the bottleneck" not in decide(cells, comps)

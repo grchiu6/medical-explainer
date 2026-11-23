@@ -122,6 +122,13 @@ def load_english_items(translations_path, hindi_items: list[dict], drop_ids=froz
     missing = [it["id"] for it in kept if it["id"] not in recs]
     if missing:
         raise ValueError(f"{len(missing)} item(s) have no translation, e.g. {missing[:5]}")
+    hard = {"option_count_mismatch", "empty_option", "bad_json"}
+    bad = [it["id"] for it in kept
+           if hard & set(recs[it["id"]].get("flags", []))
+           or sorted(recs[it["id"]].get("options", {})) != sorted(it["options"])]
+    if bad:
+        raise ValueError(f"{len(bad)} translation(s) are structurally broken, e.g. {bad[:5]}; drop them with "
+                         "--exclude-file performance_eval/data/bad_translation_items.csv")
     out = []
     for it in kept:
         r = recs[it["id"]]

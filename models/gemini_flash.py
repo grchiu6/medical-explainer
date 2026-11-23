@@ -24,6 +24,8 @@ DEFAULT_BUDGET_USD = 2.0
 _RETRY_WAITS = (2, 4, 8)
 
 _client = None
+# Running total of ALL Gemini spend (every run and the translation); the budget applies to this.
+TOTAL_PATH = Path(__file__).resolve().parents[1] / "performance_eval" / "outputs" / "gemini_total_usage.json"
 
 
 class BudgetExceeded(RuntimeError):
@@ -62,6 +64,17 @@ def _get_client():
     return _client
 
 
+def total_cost() -> float:
+    if not TOTAL_PATH.is_file():
+        return 0.0
+    return float(json.loads(TOTAL_PATH.read_text(encoding="utf-8"))["cost_usd"])
+
+
+def _add_to_total(cost: float) -> None:
+    TOTAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    TOTAL_PATH.write_text(json.dumps({"cost_usd": total_cost() + cost}, indent=2), encoding="utf-8")
+
+
 def _budget() -> float:
     return float(os.getenv("GEMINI_BUDGET_USD", DEFAULT_BUDGET_USD))
 
@@ -75,14 +88,18 @@ def _record(resp) -> None:
     USAGE["prompt_tokens"] += p
     USAGE["output_tokens"] += o
     USAGE["thoughts_tokens"] += t
-    USAGE["cost_usd"] += (p * PRICE_IN_PER_M + (o + t) * PRICE_OUT_PER_M) / 1e6
+    cost = (p * PRICE_IN_PER_M + (o + t) * PRICE_OUT_PER_M) / 1e6
+    USAGE["cost_usd"] += cost
+    _add_to_total(cost)
 
 
 def get_answer(prompt: str, gen_kwargs: dict | None = None) -> str:
     from google.genai import types
 
-    if USAGE["cost_usd"] >= _budget():
-        raise BudgetExceeded(f"spent ${USAGE['cost_usd']:.4f} >= budget ${_budget():.2f} (GEMINI_BUDGET_USD)")
+    spent = max(total_cost(), USAGE["cost_usd"])
+    if spent >= _budget():
+        raise BudgetExceeded(f"total Gemini spend ${spent:.4f} >= budget ${_budget():.2f} "
+                             f"(GEMINI_BUDGET_USD; running total in {TOTAL_PATH})")
     level = (gen_kwargs or {}).get("thinking_level", DEFAULT_THINKING_LEVEL)
     config = types.GenerateContentConfig(
         temperature=0,

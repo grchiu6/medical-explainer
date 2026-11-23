@@ -65,7 +65,7 @@ def test_run_exclude_file_drops_items_after_split_and_records_sidecar(tmp_path, 
     rows = list(csv.DictReader(open(tmp_path / "himed_c_raw.csv", encoding="utf-8")))
     assert [r["item_id"] for r in rows] == [t["id"] for t in test[1:]]
     cfg = json.loads((tmp_path / "himed_c_raw.csv.config.json").read_text(encoding="utf-8"))
-    assert cfg["exclude_file"] == "ex.csv" and len(cfg["exclude_sha256"]) == 64
+    assert cfg["exclude_file"] == ["ex.csv"] and len(cfg["exclude_sha256"][0]) == 64
 
 
 def test_run_without_exclude_file_sidecar_is_none(tmp_path, fakes):
@@ -91,3 +91,14 @@ def test_run_exclude_file_allows_passages_for_excluded_items(tmp_path, fakes, mo
     run_mod.main(["--model", "himed", "--condition", "c", "--exclude-file", str(ex),
                   "--passages-file", str(tmp_path / "p.jsonl"), "--output-dir", str(tmp_path)])
     assert seen["allow_extra"] is True
+
+
+def test_run_exclude_file_repeatable(tmp_path, fakes):
+    test, _ = split_test_fewshot(_fake_items(), fewshot_n=10, seed=42)
+    ex1, ex2 = tmp_path / "ex1.csv", tmp_path / "ex2.csv"
+    _write_excl(ex1, [[test[0]["id"], "gov"]])
+    _write_excl(ex2, [[test[1]["id"], "google:empty_option"]])
+    run_mod.main(["--model", "himed", "--condition", "c", "--exclude-file", str(ex1),
+                  "--exclude-file", str(ex2), "--output-dir", str(tmp_path)])
+    rows = list(csv.DictReader(open(tmp_path / "himed_c_raw.csv", encoding="utf-8")))
+    assert [r["item_id"] for r in rows] == [t["id"] for t in test[2:]]

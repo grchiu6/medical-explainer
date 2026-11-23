@@ -35,9 +35,10 @@ def apply_exclusions(items: list[dict], excluded: dict[str, str], key: str = "id
     return [it for it in items if it[key] not in excluded]
 
 
-def exclusion_sidecar_fields(path: Path | None) -> dict:
-    """Config-sidecar keys recording which exclusion file a run used."""
-    if path is None:
+def exclusion_sidecar_fields(paths: list[Path] | None) -> dict:
+    """Config-sidecar keys recording which exclusion file(s) a run used."""
+    if not paths:
         return {"exclude_file": None, "exclude_sha256": None}
-    path = Path(path)
-    return {"exclude_file": path.name, "exclude_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    paths = [Path(p) for p in paths]
+    return {"exclude_file": [p.name for p in paths],
+            "exclude_sha256": [hashlib.sha256(p.read_bytes()).hexdigest() for p in paths]}

@@ -139,14 +139,19 @@ def agreement(primary: dict[str, dict], secondary: dict[str, dict]) -> dict[str,
     return {iid: chrf(_flat(primary[iid]), _flat(secondary[iid])) for iid in primary if iid in secondary}
 
 
-def write_bad_translations(records: list[dict], path: Path) -> None:
+def write_bad_translations(records: list[dict], path: Path, secondary: list[dict] | None = None) -> None:
+    """Union of structurally broken items across engines, so every English run drops the same ids."""
+    reasons: dict[str, list[str]] = {}
+    for engine, recs in (("google", records), ("gemini", secondary or [])):
+        for r in recs:
+            hard = [fl for fl in r["flags"] if fl in HARD_FLAGS]
+            if hard:
+                reasons.setdefault(r["item_id"], []).append(f"{engine}:{'+'.join(hard)}")
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["item_id", "reason"])
-        for r in records:
-            hard = [fl for fl in r["flags"] if fl in HARD_FLAGS]
-            if hard:
-                w.writerow([r["item_id"], "+".join(hard)])
+        for iid, rs in reasons.items():
+            w.writerow([iid, ";".join(rs)])
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -209,7 +214,7 @@ def main(argv: list[str] | None = None) -> None:
 
     prim = {r["item_id"]: r for r in read_jsonl(args.out_dir / "translations_google.jsonl")}
     sec = {r["item_id"]: r for r in read_jsonl(args.out_dir / "translations_gemini.jsonl")}
-    write_bad_translations(list(prim.values()), DATA_DIR / "bad_translation_items.csv")
+    write_bad_translations(list(prim.values()), DATA_DIR / "bad_translation_items.csv", list(sec.values()))
     agree = agreement(prim, sec)
     lines = ["# Translation report", "", f"Primary (Google): {len(prim)} items; secondary (Gemini): {len(sec)} items.", ""]
     for name, recs in (("google", prim), ("gemini", sec)):

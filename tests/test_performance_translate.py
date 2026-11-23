@@ -121,4 +121,28 @@ def test_write_bad_translations_lists_structural_flags_only(tmp_path):
     out = tmp_path / "bad.csv"
     write_bad_translations(recs, out)
     lines = out.read_text(encoding="utf-8").splitlines()
-    assert lines == ["item_id,reason", "a,option_count_mismatch"]
+    assert lines == ["item_id,reason", "a,google:option_count_mismatch"]
+
+
+def test_load_english_items_refuses_hard_flagged_record(tmp_path):
+    p = tmp_path / "t.jsonl"
+    _write_jsonl(p, [{"item_id": "i1", "question": "", "options": {}, "flags": ["bad_json"]}])
+    with pytest.raises(ValueError, match="i1"):
+        load_english_items(p, [HI])
+
+
+def test_load_english_items_refuses_option_key_mismatch(tmp_path):
+    p = tmp_path / "t.jsonl"
+    _write_jsonl(p, [{"item_id": "i1", "question": "Q", "options": {"a": "x", "b": "y", "c": "z", "d": "w"},
+                      "flags": []}])
+    with pytest.raises(ValueError, match="i1"):
+        load_english_items(p, [HI])
+
+
+def test_write_bad_translations_unions_engines(tmp_path):
+    out = tmp_path / "bad.csv"
+    write_bad_translations([{"item_id": "a", "flags": ["empty_option"]}], out,
+                           secondary=[{"item_id": "b", "flags": ["bad_json"]},
+                                      {"item_id": "a", "flags": []}])
+    assert out.read_text(encoding="utf-8").splitlines() == [
+        "item_id,reason", "a,google:empty_option", "b,gemini:bad_json"]

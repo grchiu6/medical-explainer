@@ -50,7 +50,8 @@ def check_same_items(cells: dict[tuple[str, str], list[dict]]) -> None:
 
 
 def _significant(comp: dict, family_size: int = DEFAULT_FAMILY_SIZE) -> bool:
-    return comp["accuracy_delta"] > 0 and min(1.0, comp["mcnemar_p"] * family_size) < ALPHA
+    """Two-sided (plan D7): a significant drop counts too. Direction is checked in decide()."""
+    return min(1.0, comp["mcnemar_p"] * family_size) < ALPHA
 
 
 def run_comparisons(cells: dict[tuple[str, str], list[dict]], family_size: int = DEFAULT_FAMILY_SIZE) -> list[dict]:
@@ -82,7 +83,7 @@ def decide(cells: dict[tuple[str, str], list[dict]], comps: list[dict]) -> str:
     found = False
     if not (c1["skipped"] or c2["skipped"]):
         gap = _acc(cells[(GEMINI, "hi")]) - max(_acc(cells[(m, "hi")]) for m in OPEN_MODELS)
-        if c1["significant"] and c2["significant"] and gap >= CEILING_GAP:
+        if all(c["significant"] and c["accuracy_delta"] > 0 for c in (c1, c2)) and gap >= CEILING_GAP:
             lines.append(f"The open Indic models are the bottleneck: Gemini is {gap * 100:.1f} pp above "
                          "the better open model in Hindi (comparisons 1 and 2 significant). "
                          "Next: fine-tuning (e.g. translated MedMCQA) or a stronger base model.")
@@ -104,6 +105,12 @@ def _pct(x: float) -> str:
     return f"{x * 100:.1f}%"
 
 
+def _sig_label(c: dict) -> str:
+    if not c["significant"]:
+        return "no"
+    return "yes (better)" if c["accuracy_delta"] > 0 else "yes (worse)"
+
+
 def build_report(cells, comps, verdict, n_info: list[str], cost_lines: list[str], family_size: int) -> str:
     lines = ["# Step 1 diagnostic", "", *n_info, "", "## Accuracy (95% Wilson CI)", "",
              "| model | language | n | accuracy | 95% CI | none_rate |", "|---|---|---|---|---|---|"]
@@ -120,7 +127,7 @@ def build_report(cells, comps, verdict, n_info: list[str], cost_lines: list[str]
             continue
         lines.append(f"| {i} | {c['label']} | {c['accuracy_delta'] * 100:+.1f} | +{c['only_new_correct']} / "
                      f"−{c['only_prior_correct']} | {c['mcnemar_p']:.4g} | {c['p_adj']:.4g} | "
-                     f"{'yes' if c['significant'] else 'no'} |")
+                     f"{_sig_label(c)} |")
     lines += ["", "## Verdict (rule fixed before the runs; plan D8)", "", verdict or "—", ""]
     if cost_lines:
         lines += ["## Gemini cost", "", *cost_lines, ""]
