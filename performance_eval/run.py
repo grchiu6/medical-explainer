@@ -18,6 +18,7 @@ from typing import Callable
 
 from dotenv import load_dotenv
 
+from performance_eval.exclusions import apply_exclusions, exclusion_sidecar_fields, load_exclusions
 from performance_eval.data_milu import (
     load_milu_hindi_medicine,
     pick_exemplars,
@@ -223,6 +224,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--shuffle-options", action="store_true",
                         help="shuffle option order of test items (position-bias check); exemplars stay native")
     parser.add_argument("--limit", type=int, default=None, help="only run the first N test items")
+    parser.add_argument("--exclude-file", type=Path, default=None,
+                        help="CSV (item_id, reason) of test items to drop after the split (see data/excluded_items.csv)")
     parser.add_argument("--passages-file", type=Path, default=None,
                         help="RAG: JSONL of retrieved passages (with a .meta.json sidecar) to prepend to each prompt. "
                              "With --limit, extra items in the file are ignored; otherwise they are refused")
@@ -246,6 +249,8 @@ def main(argv: list[str] | None = None) -> None:
     items = load_milu_hindi_medicine(hf_token=os.environ.get("HF_TOKEN"))
     test, pool = split_test_fewshot(items, fewshot_n=args.fewshot_n, seed=args.seed)
     exemplars = pick_exemplars(pool, seed=args.seed)
+    if args.exclude_file is not None:
+        test = apply_exclusions(test, load_exclusions(args.exclude_file))
     if args.shuffle_options:
         test = [shuffle_item_options(it, seed=args.seed) for it in test]
     if args.limit is not None:
@@ -254,7 +259,7 @@ def main(argv: list[str] | None = None) -> None:
     passages = None
     if args.passages_file is not None:
         passages = load_passages(args.passages_file, [it["id"] for it in test],
-                                 allow_extra=args.limit is not None)
+                                 allow_extra=args.limit is not None or args.exclude_file is not None)
 
     output_path = args.output_dir / f"{args.model}_{args.condition}_raw.csv"
     check_or_write_config(output_path, {
@@ -270,6 +275,7 @@ def main(argv: list[str] | None = None) -> None:
         "limit": args.limit,
         "exemplar_ids": [ex["id"] for ex in exemplars] if args.use_fewshot else [],
         **rag_sidecar_fields(args.passages_file),
+        **exclusion_sidecar_fields(args.exclude_file),
     })
 
     _set_seed(args.gen_seed)

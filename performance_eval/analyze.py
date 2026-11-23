@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from literacy_eval.analysis.stats import mcnemar_exact, wilson_ci
+from performance_eval.exclusions import load_exclusions
 from performance_eval.score import score_rows
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -236,6 +237,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     ap.add_argument("--family-size", type=int, default=DEFAULT_FAMILY_SIZE,
                     help="pre-registered Bonferroni family size m per model (default 3: C2, C3, C4)")
+    ap.add_argument("--exclude-file", type=Path, default=None,
+                    help="CSV (item_id, reason) of items to drop from every ladder entry before scoring stats")
     args = ap.parse_args(argv)
     if args.family_size < 1:
         ap.error("--family-size must be >= 1")
@@ -254,6 +257,10 @@ def main(argv: list[str] | None = None) -> None:
         (cond, mode, score_raw_csv(raw_path, mode, args.raw_dir / f"{args.model}_{cond}_scored.csv"))
         for cond, mode, raw_path in entries
     ]
+    if args.exclude_file is not None:
+        excluded = load_exclusions(args.exclude_file)
+        all_scored = [(cond, mode, [r for r in scored if r["item_id"] not in excluded])
+                      for cond, mode, scored in all_scored]
     check_item_ids([(cond, scored) for cond, _, scored in all_scored])
 
     ladder, prev_rows = [], None
