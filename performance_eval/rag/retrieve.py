@@ -32,6 +32,15 @@ def sample_random(items, passage_ids, k: int = 5, seed: int = 42):
     return out
 
 
+def english_query_items(test: list[dict], translations_path: Path, exclude_file: Path) -> list[dict]:
+    """Test items after exclusions, with question/options replaced by their English translation
+    (same ids). Used only to build retrieval queries; the answering prompt stays Hindi."""
+    from performance_eval.data_milu import load_english_items
+    from performance_eval.exclusions import apply_exclusions, load_exclusions
+
+    return load_english_items(translations_path, apply_exclusions(test, load_exclusions(exclude_file)))
+
+
 def check_corpus_matches_index(corpus_path: Path, index_meta: dict) -> None:
     """Exit unless the corpus file is the one the index was built from."""
     actual = _sha256_file(Path(corpus_path))
@@ -43,7 +52,8 @@ def check_corpus_matches_index(corpus_path: Path, index_meta: dict) -> None:
 
 
 def write_passages(path: Path, condition: str, hits: dict, corpus: dict[str, dict],
-                   k: int, seed: int | None, index_meta: dict, split_seed: int | None = None) -> None:
+                   k: int, seed: int | None, index_meta: dict, split_seed: int | None = None,
+                   query_language: str = "hi") -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -57,7 +67,7 @@ def write_passages(path: Path, condition: str, hits: dict, corpus: dict[str, dic
                                 "passages": passages}, ensure_ascii=False) + "\n")
     meta = {"condition": condition, "k": k, "seed": seed, "split_seed": split_seed,
             "retriever": index_meta["retriever"], "index_meta": index_meta,
-            "query_format": "question+options"}
+            "query_format": "question+options", "query_language": query_language}
     path.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
@@ -74,7 +84,13 @@ def main() -> None:
     ap.add_argument("--split-seed", type=int, default=42,
                     help="seed of split_test_fewshot (must match the run.py --seed)")
     ap.add_argument("--seed", type=int, default=42, help="random-control seed only")
+    ap.add_argument("--query-translations", type=Path, default=None,
+                    help="translate-then-retrieve: build queries from these English translations "
+                         "(writes passages_rag_k5_enquery.jsonl only; requires --exclude-file)")
+    ap.add_argument("--exclude-file", type=Path, default=None)
     args = ap.parse_args()
+    if args.query_translations is not None and args.exclude_file is None:
+        ap.error("--query-translations requires --exclude-file (translations cover only the kept items)")
 
     load_dotenv()
     items = load_milu_hindi_medicine(hf_token=os.environ.get("HF_TOKEN"))
@@ -82,6 +98,14 @@ def main() -> None:
     index, ids, meta = load_index(args.index_dir)
     check_corpus_matches_index(args.corpus, meta)
     corpus = {p["passage_id"]: p for p in read_corpus(args.corpus)}
+
+    if args.query_translations is not None:
+        items = english_query_items(test, args.query_translations, args.exclude_file)
+        hits = retrieve_topk(items, index, ids, load_bge_m3(), k=args.k)
+        write_passages(args.out_dir / "passages_rag_k5_enquery.jsonl", "rag_k5_enquery", hits, corpus,
+                       k=args.k, seed=None, index_meta=meta, split_seed=args.split_seed, query_language="en")
+        print(f"Wrote {len(items)} items (English queries) to {args.out_dir}")
+        return
 
     hits = retrieve_topk(test, index, ids, load_bge_m3(), k=args.k)
     write_passages(args.out_dir / "passages_rag_k5.jsonl", "rag_k5", hits, corpus,

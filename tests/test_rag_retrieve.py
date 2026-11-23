@@ -92,3 +92,39 @@ def test_corpus_sha_mismatch_exits(tmp_path, idx):
     other.write_text("{}\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="corpus"):
         check_corpus_matches_index(other, meta)
+
+
+def test_query_translations_swap_query_only(tmp_path, idx):
+    from performance_eval.rag.retrieve import english_query_items
+
+    index, ids, _, _ = idx
+    tr = tmp_path / "t.jsonl"
+    tr.write_text("".join(json.dumps({"item_id": it["id"], "question": f"english {it['id']}",
+                                      "options": {c: f"en {c}" for c in "ABCD"}}) + "\n"
+                          for it in ITEMS[1:]), encoding="utf-8")
+    ex = tmp_path / "ex.csv"
+    ex.write_text(f"item_id,reason\n{ITEMS[0]['id']},gov\n", encoding="utf-8")
+
+    class Recording(FakeEncoder):
+        seen = []
+
+        def encode(self, texts):
+            Recording.seen.extend(texts)
+            return super().encode(texts)
+
+    items = english_query_items(ITEMS, tr, ex)
+    hits = retrieve_topk(items, index, ids, Recording(), k=5)
+    assert list(hits) == [it["id"] for it in ITEMS[1:]]
+    assert all(q.startswith("english ") for q in Recording.seen)
+    assert len(Recording.seen) == len(ITEMS) - 1
+
+
+def test_meta_records_query_language(tmp_path, idx):
+    _, ids, meta, corpus = idx
+    hits = sample_random(ITEMS, ids, k=5, seed=7)
+    path = tmp_path / "r.jsonl"
+    write_passages(path, "rag_k5_enquery", hits, corpus, k=5, seed=None, index_meta=meta,
+                   split_seed=42, query_language="en")
+    assert json.loads(path.with_suffix(".meta.json").read_text())["query_language"] == "en"
+    write_passages(path, "rag_k5", hits, corpus, k=5, seed=None, index_meta=meta, split_seed=42)
+    assert json.loads(path.with_suffix(".meta.json").read_text())["query_language"] == "hi"

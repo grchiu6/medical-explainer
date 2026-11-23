@@ -4,7 +4,11 @@
 # Hindi medicine TEST items. Writes passages_rag_k5.jsonl and
 # passages_rag_rand_k5.jsonl (+ .meta.json) under the milu_hi_med output dir.
 #
-# Usage: sbatch scripts/rag_retrieve.sh
+# Usage: sbatch scripts/rag_retrieve.sh [extra retrieve flags...]
+# Translate-then-retrieve (step 1 bonus; English queries, writes passages_rag_k5_enquery.jsonl only):
+#   sbatch scripts/rag_retrieve.sh --query-translations performance_eval/data/milu_en/translations_google.jsonl --exclude-file performance_eval/data/excluded_items.csv
+# then answer in Hindi with those passages:
+#   sbatch scripts/performance_milu_run.sh himed rag_k5_enquery --exclude-file performance_eval/data/excluded_items.csv --passages-file /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/passages_rag_k5_enquery.jsonl
 # MILU is gated: needs HF_TOKEN or $HF_HOME/token (see performance_milu_run.sh).
 
 #SBATCH --job-name=rag-retrieve
@@ -59,8 +63,9 @@ python -c "import faiss, sentence_transformers" || { echo "ERROR: .venv-rag lack
 python -m performance_eval.rag.retrieve \
     --index-dir "$SCRATCH/rag/index_bge_m3" \
     --corpus "$SCRATCH/rag/corpus.jsonl" \
-    --out-dir "$OUTPUT_DIR"
+    --out-dir "$OUTPUT_DIR" \
+    "$@"
 
 echo ""
 echo "=== Job complete at $(date) ==="
-wc -l "$OUTPUT_DIR/passages_rag_k5.jsonl" "$OUTPUT_DIR/passages_rag_rand_k5.jsonl"
+wc -l "$OUTPUT_DIR"/passages_rag_*.jsonl
