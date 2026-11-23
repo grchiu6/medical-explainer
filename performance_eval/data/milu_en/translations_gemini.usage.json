@@ -1,0 +1,8 @@
+{
+  "calls": 388,
+  "prompt_tokens": 67084,
+  "output_tokens": 30555,
+  "thoughts_tokens": 0,
+  "cost_usd": 0.16489425000000013,
+  "blocked": 0
+}
