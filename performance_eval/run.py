@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 
 from performance_eval.exclusions import apply_exclusions, exclusion_sidecar_fields, load_exclusions
 from performance_eval.data_milu import (
+    load_english_items,
     load_milu_hindi_medicine,
     pick_exemplars,
     shuffle_item_options,
@@ -175,6 +176,7 @@ def run_condition(
     gen_kwargs: dict,
     output_path: Path,
     passages: dict[str, list[dict]] | None = None,
+    language: str = "hi",
 ) -> None:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -197,6 +199,7 @@ def run_condition(
                 use_cot=use_cot,
                 exemplars=fewshot_pool if use_fewshot else None,
                 passages=passages[item["id"]] if passages is not None else None,
+                language=language,
             )
             answer = get_answer_fn(prompt, gen_kwargs=gen_kwargs)
             writer.writerow({
@@ -236,8 +239,21 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--passages-file", type=Path, default=None,
                         help="RAG: JSONL of retrieved passages (with a .meta.json sidecar) to prepend to each prompt. "
                              "With --limit, extra items in the file are ignored; otherwise they are refused")
-    parser.add_argument("--output-dir", type=Path, default=Path(__file__).parent / "outputs" / "milu_hi_med")
+    parser.add_argument("--output-dir", type=Path, default=None,
+                        help="default outputs/milu_hi_med (hi) or outputs/milu_en_med (en)")
+    parser.add_argument("--language", choices=["hi", "en"], default="hi",
+                        help="en: run on English translations of the same items (same item_ids and gold)")
+    parser.add_argument("--translations", type=Path, default=None,
+                        help="translations JSONL (performance_eval/data/milu_en/translations_*.jsonl); required with --language en")
     args = parser.parse_args(argv)
+    if args.language == "en" and args.translations is None:
+        parser.error("--language en requires --translations")
+    if args.language == "en" and args.use_fewshot:
+        parser.error("--use-fewshot is not supported with --language en (exemplars are Hindi)")
+    if args.language == "en" and args.shuffle_options:
+        parser.error("--shuffle-options is not supported with --language en (translations keep native option order)")
+    if args.output_dir is None:
+        args.output_dir = Path(__file__).parent / "outputs" / ("milu_en_med" if args.language == "en" else "milu_hi_med")
 
     try:
         validate_args(args.sample_decoding, temperature=args.temperature, top_p=args.top_p)
@@ -269,6 +285,8 @@ def main(argv: list[str] | None = None) -> None:
                                  allow_extra=args.limit is not None or args.exclude_file is not None)
 
     api_mod = _load_model_module(args.model) if args.model in _API_MODELS else None
+    if args.language == "en":
+        test = load_english_items(args.translations, test)
     output_path = args.output_dir / f"{args.model}_{args.condition}_raw.csv"
     check_or_write_config(output_path, {
         "model_id": getattr(api_mod, "MODEL_ID", None),
@@ -285,6 +303,9 @@ def main(argv: list[str] | None = None) -> None:
         "exemplar_ids": [ex["id"] for ex in exemplars] if args.use_fewshot else [],
         **rag_sidecar_fields(args.passages_file),
         **exclusion_sidecar_fields(args.exclude_file),
+        "language": args.language,
+        "translations_sha256": (hashlib.sha256(args.translations.read_bytes()).hexdigest()
+                                if args.translations is not None else None),
     })
 
     _set_seed(args.gen_seed)
@@ -301,7 +322,7 @@ def main(argv: list[str] | None = None) -> None:
             finally:
                 api_mod.save_usage(usage_path)
     run_condition(test, exemplars, get_answer_fn, args.use_cot, args.use_fewshot, gen_kwargs, output_path,
-                  passages=passages)
+                  passages=passages, language=args.language)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ _PASSAGES_HEADER = (
     "question. Use them only if they help."
 )
 PASSAGE_MAX_CHARS = 1000
+_LANGUAGE_NAMES = {"hi": "Hindi", "en": "English"}
 
 
 def _make_letter_list(n_options: int) -> str:
@@ -40,6 +41,7 @@ def build_prompt(
     use_cot: bool = False,
     exemplars: list[dict] | None = None,
     passages: list[dict] | None = None,
+    language: str = "hi",
 ) -> str:
     """Build the prompt for one item under one condition.
 
@@ -47,7 +49,11 @@ def build_prompt(
     rendered before the target question, in the order given.
     passages: optional retrieved passages ({"title", "content"}); rendered as a
     reference block that always comes first. None leaves the prompt unchanged.
+    language: "hi" (default; prompt text unchanged) or "en" for translated items,
+    where every "in Hindi" becomes "in English".
     """
+    if language not in _LANGUAGE_NAMES:
+        raise ValueError(f"language must be one of {sorted(_LANGUAGE_NAMES)}, got {language!r}")
     parts = []
     if passages:
         blocks = [
@@ -63,12 +69,13 @@ def build_prompt(
         parts.append("Here are example questions:\n\n" + "\n\n".join(blocks))
 
     template = _COT_INSTRUCTION if use_cot else _BASELINE_INSTRUCTION
-    parts.append(template.format(letters=_make_letter_list(n_options)))
+    lang = f"in {_LANGUAGE_NAMES[language]}"
+    parts.append(template.format(letters=_make_letter_list(n_options)).replace("in Hindi", lang))
 
     # CoT: end on a reasoning cue (not "Answer"), so the model reasons first
     # and only then writes the final `Answer: X` line.
     closing = (
         "Reasoning (step by step, in Hindi):" if use_cot else "Answer (single letter only):"
     )
-    parts.append(f"Question: {question_with_options}\n\n{closing}")
+    parts.append(f"Question: {question_with_options}\n\n{closing.replace('in Hindi', lang)}")
     return "\n\n".join(parts)

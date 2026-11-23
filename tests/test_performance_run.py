@@ -40,7 +40,7 @@ def test_run_condition_resumes_by_item_id_skipping_done_rows(tmp_path):
 def test_run_condition_passes_fewshot_pool_into_prompt_when_enabled(tmp_path, monkeypatch):
     captured = {}
 
-    def fake_build_prompt(question_with_options, n_options, use_cot=False, exemplars=None, passages=None):
+    def fake_build_prompt(question_with_options, n_options, use_cot=False, exemplars=None, passages=None, language="hi"):
         captured["exemplars"] = exemplars
         return "PROMPT"
 
@@ -388,3 +388,44 @@ def test_load_passages_allow_extra_still_refuses_missing_requested_id(tmp_path):
     p = _write_passages(tmp_path, ["a", "b"])
     with pytest.raises(SystemExit):
         load_passages(p, ["a", "z"], allow_extra=True)
+
+
+def test_run_en_requires_translations(tmp_path, fakes):
+    with pytest.raises(SystemExit):
+        run_mod.main(["--model", "himed", "--condition", "c0_baseline", "--language", "en",
+                      "--output-dir", str(tmp_path)])
+
+
+def test_run_en_uses_translations_and_records_sidecar(tmp_path, fakes):
+    import json
+
+    from performance_eval.data_milu import split_test_fewshot
+
+    test, _ = split_test_fewshot(_fake_items(), fewshot_n=10, seed=42)
+    tr = tmp_path / "t.jsonl"
+    tr.write_text("".join(json.dumps({"item_id": t["id"], "question": f"EN {t['id']}",
+                                      "options": {c: f"opt {c}" for c in "ABCD"}}) + "\n" for t in test),
+                  encoding="utf-8")
+    run_mod.main(["--model", "himed", "--condition", "c0_en", "--language", "en",
+                  "--translations", str(tr), "--output-dir", str(tmp_path)])
+    rows = list(csv.DictReader(open(tmp_path / "himed_c0_en_raw.csv", encoding="utf-8")))
+    assert [r["item_id"] for r in rows] == [t["id"] for t in test]
+    assert rows[0]["question_with_options"].startswith("EN ")
+    assert rows[0]["reference_answer"] == test[0]["answer_letter"]
+    assert "in English" in fakes["prompts"][0] and "in Hindi" not in fakes["prompts"][0]
+    cfg = json.loads((tmp_path / "himed_c0_en_raw.csv.config.json").read_text(encoding="utf-8"))
+    assert cfg["language"] == "en" and len(cfg["translations_sha256"]) == 64
+
+
+def test_run_hi_sidecar_language(tmp_path, fakes):
+    import json
+
+    run_mod.main(["--model", "himed", "--condition", "c", "--limit", "1", "--output-dir", str(tmp_path)])
+    cfg = json.loads((tmp_path / "himed_c_raw.csv.config.json").read_text(encoding="utf-8"))
+    assert cfg["language"] == "hi" and cfg["translations_sha256"] is None
+
+
+def test_run_en_rejects_shuffle(tmp_path, fakes):
+    with pytest.raises(SystemExit):
+        run_mod.main(["--model", "himed", "--condition", "c", "--language", "en", "--shuffle-options",
+                      "--translations", str(tmp_path / "t.jsonl"), "--output-dir", str(tmp_path)])

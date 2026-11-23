@@ -1,3 +1,4 @@
+import pytest
 from performance_eval.prompts import build_prompt
 
 
@@ -83,3 +84,27 @@ def test_passages_block_comes_first_with_cot_and_fewshot():
     p = build_prompt(_GQ, 4, use_cot=True, exemplars=ex, passages=[{"title": "T", "content": "c"}])
     assert p.startswith("Reference passages") and p.index("Here are example questions") > p.index("[1] T")
     assert p.endswith("Reasoning (step by step, in Hindi):")
+
+
+from performance_eval.prompts import build_prompt as _bp  # noqa: E402
+
+_Q = 'प्रश्न\nA. a\nB. b\nC. c\nD. d'
+_HINDI_BASE = 'You are answering a multiple-choice medical question in Hindi. Read the question and the options carefully, then respond with ONLY the letter of the correct answer (A, B, C, or D). Do not explain. Do not write anything except the single letter.\n\nQuestion: प्रश्न\nA. a\nB. b\nC. c\nD. d\n\nAnswer (single letter only):'
+_HINDI_COT = 'You are answering a multiple-choice medical question in Hindi. Read the question and the options carefully. Think step by step in Hindi. On the final line, write exactly `Answer: X` where X is the single letter of the correct answer (A, B, C, or D). Do not write anything after that line.\n\nQuestion: प्रश्न\nA. a\nB. b\nC. c\nD. d\n\nReasoning (step by step, in Hindi):'
+
+
+def test_hindi_prompt_unchanged():
+    assert _bp(_Q, 4) == _HINDI_BASE
+    assert _bp(_Q, 4, use_cot=True) == _HINDI_COT
+    assert _bp(_Q, 4, language="hi") == _HINDI_BASE
+
+
+@pytest.mark.parametrize("cot", [False, True])
+def test_english_prompt_says_english(cot):
+    p = _bp("Which?\nA. a\nB. b", 2, use_cot=cot, language="en")
+    assert "in English" in p and "in Hindi" not in p
+
+
+def test_unknown_language_raises():
+    with pytest.raises(ValueError):
+        _bp(_Q, 4, language="fr")
