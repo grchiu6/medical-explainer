@@ -19,7 +19,7 @@ MODEL_ID = "gemini-3.8-flash"
 # USD per 1M tokens, paid tier, valid through 2026-12-31 (prices double on 2027-01-01).
 PRICE_IN_PER_M = 0.75
 PRICE_OUT_PER_M = 3.75  # output price includes thinking tokens
-DEFAULT_THINKING_LEVEL = "MINIMAL"
+DEFAULT_THINKING_LEVEL = "LOW"  # gemini-3.8-flash rejects MINIMAL (400, 2026-11-22)
 DEFAULT_BUDGET_USD = 2.0
 _RETRY_WAITS = (2, 4, 8)
 
