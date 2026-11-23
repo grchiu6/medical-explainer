@@ -27,6 +27,11 @@
 #     # RAG (see performance_eval/docs/2026-11-16-rag-design.md). Retrieval first: sbatch scripts/rag_retrieve.sh
 #     sbatch scripts/performance_milu_run.sh himed rag_rand_k5 --passages-file /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/passages_rag_rand_k5.jsonl
 #     sbatch scripts/performance_milu_run.sh himed rag_k5 --passages-file /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/passages_rag_k5.jsonl
+#     # Step 1 diagnostic (performance_eval/docs/2026-11-22-step1-diagnostic-plan.md):
+#     # English translations of the same 388 kept items. Hindi c0_baseline runs are reused as-is.
+#     sbatch scripts/performance_milu_run.sh himed c0_en_google --language en --exclude-file performance_eval/data/excluded_items.csv --translations performance_eval/data/milu_en/translations_google.jsonl
+#     sbatch scripts/performance_milu_run.sh nanda c0_en_google --language en --exclude-file performance_eval/data/excluded_items.csv --translations performance_eval/data/milu_en/translations_google.jsonl
+#     # (after the Gemini translation exists) same with c0_en_gemini + translations_gemini.jsonl
 #
 # Then compare conditions. The analyze mode must match the condition:
 # first_letter for non-CoT conditions, after_marker for CoT conditions.
