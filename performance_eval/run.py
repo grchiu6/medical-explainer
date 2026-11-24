@@ -34,6 +34,9 @@ _CONFIG_EXEMPT_KEYS = {"limit"}
 
 
 _API_MODELS = {"gemini_flash"}
+# --system-prompt values (HiMed only). "default" = the model's own Hindi system message, unchanged.
+# Neutral: no language instruction, so the user prompt alone decides the reasoning language (Phase A).
+SYSTEM_PROMPTS = {"neutral": "You are a helpful medical teacher. Follow the given instructions."}
 # --language -> (question language, options language) for translated / mixed items.
 _ITEM_PARTS = {"en": ("en", "en"), "hi_q_en_opts": ("hi", "en"), "en_q_hi_opts": ("en", "hi")}
 
@@ -254,7 +257,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--reasoning-language", choices=["hi", "en"], default=None,
                         help="CoT only: language of the step-by-step reasoning (default: the item language); "
                              "the question description is unchanged")
+    parser.add_argument("--system-prompt", choices=["default", *SYSTEM_PROMPTS], default="default",
+                        help="HiMed only: replace its Hindi system message ('...answer in Hindi'). "
+                             "Run both arms of a comparison with the same value")
     args = parser.parse_args(argv)
+    if args.system_prompt != "default" and args.model != "himed":
+        parser.error("--system-prompt is only supported for --model himed")
     if args.reasoning_language is not None and not args.use_cot:
         parser.error("--reasoning-language requires --use-cot")
     if args.language != "hi" and args.translations is None:
@@ -323,10 +331,15 @@ def main(argv: list[str] | None = None) -> None:
                                 if args.translations is not None else None),
         # Only when set, so sidecars written before this flag existed still match on resume.
         **({"reasoning_language": args.reasoning_language} if args.reasoning_language is not None else {}),
+        **({"system_prompt": args.system_prompt} if args.system_prompt != "default" else {}),
     })
 
     _set_seed(args.gen_seed)
     get_answer_fn = _load_model_fn(args.model)
+    if args.system_prompt != "default":
+        import functools
+
+        get_answer_fn = functools.partial(get_answer_fn, system_prompt=SYSTEM_PROMPTS[args.system_prompt])
     if api_mod is not None:
         # Token usage + cost persist next to the raw CSV and accumulate across resumes.
         usage_path = output_path.with_name(output_path.name + ".usage.json")

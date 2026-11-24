@@ -27,6 +27,11 @@
   | `c2_cot_en` **new** | hi | hi | English CoT | after_marker | `c2_cot` |
 
   `{T}` ∈ {google, gemini}; mixed runs are done for both translations (4 jobs) + 1 `c2_cot_en` job = **5 GPU jobs**. `c2_cot_en` uses `--max-new-tokens 2048`, same as `c2_cot`.
+  **Amendment A2a (2026-11-24, before any full CoT run):** the 3-item smoke test with HiMed's default system
+  message ("…हिंदी में उत्तर दें", answer in Hindi) reasoned in Hindi on 3/3 items despite the English instruction.
+  Comparison 3 is therefore run as `c2_cot_en_sysneutral` vs a new control `c2_cot_sysneutral`, both with
+  `--system-prompt neutral` ("You are a helpful medical teacher. Follow the given instructions."), so the two
+  arms differ only in the reasoning-language instruction. The old `c2_cot` is not used in the rule. 6 GPU jobs.
 - **A3 — Prompt wording.** The `--language` value sets the phrase that replaces "in Hindi" in the *question description* only:
   `hi` → "in Hindi"; `en` → "in English"; `hi_q_en_opts` → "in Hindi (answer options in English)"; `en_q_hi_opts` → "in English (answer options in Hindi)".
   `--reasoning-language en` (CoT only) changes only the reasoning phrases: "Think step by step in English." and closing "Reasoning (step by step, in English):"; the question description stays "in Hindi". Existing prompts for `hi`/`en` must stay byte-identical.

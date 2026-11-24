@@ -70,7 +70,10 @@ def _load_model():
     print("HiMed-8B loaded.")
 
 
-def _format_for_himed(prompt_text: str) -> str:
+_DEFAULT_SYSTEM_PROMPT = "आप एक सहायक चिकित्सा शिक्षक हैं। दिए गए निर्देशों का पालन करते हुए हिंदी में उत्तर दें।"
+
+
+def _format_for_himed(prompt_text: str, system_prompt: str | None = None) -> str:
     """Format the prompt using Llama 3.1 chat template via apply_chat_template.
 
     HiMed-8B inherits Llama-3.1-8B-Instruct's chat template. Using
@@ -83,6 +86,8 @@ def _format_for_himed(prompt_text: str) -> str:
 
     Args:
         prompt_text: The pre-built Hindi instruction prompt from prompts.py.
+        system_prompt: None keeps the Hindi system message above ("...answer in Hindi");
+            any string replaces it (Phase A English-CoT runs use a neutral one).
 
     Returns:
         The formatted prompt string ready for tokenization.
@@ -90,7 +95,7 @@ def _format_for_himed(prompt_text: str) -> str:
     messages = [
         {
             "role": "system",
-            "content": "आप एक सहायक चिकित्सा शिक्षक हैं। दिए गए निर्देशों का पालन करते हुए हिंदी में उत्तर दें।"
+            "content": _DEFAULT_SYSTEM_PROMPT if system_prompt is None else system_prompt,
         },
         {
             "role": "user",
@@ -125,7 +130,7 @@ def _merge_gen_kwargs(overrides: dict | None) -> dict:
     return {**_DEFAULT_GEN_KWARGS, **(overrides or {})}
 
 
-def get_answer(prompt: str, gen_kwargs: dict | None = None) -> str:
+def get_answer(prompt: str, gen_kwargs: dict | None = None, system_prompt: str | None = None) -> str:
     """Generate a Hindi medical explanation using HiMed-8B.
 
     Same interface as all other model wrappers — takes the pre-built prompt
@@ -142,7 +147,7 @@ def get_answer(prompt: str, gen_kwargs: dict | None = None) -> str:
     """
     _load_model()
 
-    formatted = _format_for_himed(prompt)
+    formatted = _format_for_himed(prompt, system_prompt=system_prompt)
 
     # Tokenize the formatted prompt
     device = next(_model.parameters()).device

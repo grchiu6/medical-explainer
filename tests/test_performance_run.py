@@ -532,3 +532,31 @@ def test_phase_a_invocations_parse(tmp_path, fakes, flags, language, reasoning):
         assert rows[0]["question_with_options"].startswith("q") and "A. opt A" in rows[0]["question_with_options"]
     if language == "en_q_hi_opts":
         assert rows[0]["question_with_options"].startswith("EN ") and "A. a" in rows[0]["question_with_options"]
+
+
+def test_system_prompt_neutral_passed_and_recorded(tmp_path, fakes, monkeypatch):
+    import json
+
+    seen = []
+    monkeypatch.setattr(run_mod, "_load_model_fn",
+                        lambda name: lambda p, gen_kwargs=None, system_prompt=None: seen.append(system_prompt) or "A")
+    run_mod.main(["--model", "himed", "--condition", "n", "--use-cot", "--system-prompt", "neutral", "--limit", "1",
+                  "--output-dir", str(tmp_path)])
+    assert seen == [run_mod.SYSTEM_PROMPTS["neutral"]]
+    assert "हिंदी" not in seen[0]
+    cfg = json.loads((tmp_path / "himed_n_raw.csv.config.json").read_text(encoding="utf-8"))
+    assert cfg["system_prompt"] == "neutral"
+
+
+def test_system_prompt_default_not_in_sidecar_and_not_passed(tmp_path, fakes):
+    import json
+
+    run_mod.main(["--model", "himed", "--condition", "d", "--limit", "1", "--output-dir", str(tmp_path)])
+    cfg = json.loads((tmp_path / "himed_d_raw.csv.config.json").read_text(encoding="utf-8"))
+    assert "system_prompt" not in cfg
+
+
+def test_system_prompt_rejected_for_other_models(tmp_path, fakes):
+    with pytest.raises(SystemExit):
+        run_mod.main(["--model", "nanda", "--condition", "x", "--system-prompt", "neutral",
+                      "--output-dir", str(tmp_path)])

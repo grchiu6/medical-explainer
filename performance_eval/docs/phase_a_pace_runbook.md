@@ -9,7 +9,13 @@ The Hindi `c0_baseline`, Hindi `c2_cot` and English `c0_en_{google,gemini}` runs
 | 2 | `c0_mix_qen_ohi_google` | English (google) | Hindi | — | `c0_baseline` |
 | 3 | `c0_mix_qhi_oen_gemini` | Hindi | English (gemini) | — | `c0_baseline` |
 | 4 | `c0_mix_qen_ohi_gemini` | English (gemini) | Hindi | — | `c0_baseline` |
-| 5 | `c2_cot_en` | Hindi | Hindi | English (instructed) | `c2_cot` |
+| 5 | `c2_cot_sysneutral` | Hindi | Hindi | Hindi (instructed) | — (new control) |
+| 6 | `c2_cot_en_sysneutral` | Hindi | Hindi | English (instructed) | `c2_cot_sysneutral` |
+
+**Amendment (2026-11-24, after the smoke test):** with HiMed's default system message ("…answer in Hindi") the
+English-reasoning smoke test reasoned in Hindi on 3/3 items. Both CoT jobs now use `--system-prompt neutral`
+("You are a helpful medical teacher. Follow the given instructions."). The old `c2_cot` is **not** the control
+any more, because it used the Hindi system message. The four mixed-language jobs are unchanged.
 
 ## 0. Get the branch (PACE, repo root)
 
@@ -29,20 +35,19 @@ Checks the new flags on 3 items before spending GPU hours. Uses throwaway labels
 EX="--exclude-file performance_eval/data/excluded_items.csv --exclude-file performance_eval/data/bad_translation_items.csv"
 TR=performance_eval/data/milu_en
 sbatch scripts/performance_milu_run.sh himed smoke_mix --language hi_q_en_opts $EX --translations $TR/translations_google.jsonl --limit 3
-sbatch scripts/performance_milu_run.sh himed smoke_cot_en --use-cot --reasoning-language en --max-new-tokens 2048 $EX --limit 3
+sbatch scripts/performance_milu_run.sh himed smoke_cot_en_neutral --use-cot --system-prompt neutral --reasoning-language en --max-new-tokens 2048 $EX --limit 3
 ```
 
-Look at the `model_answer` column of `smoke_cot_en` (the `## Thinking` part): the reasoning should be in English.
+Look at the `## Thinking` part of `himed_smoke_cot_en_neutral_raw.csv`: the reasoning should be in English.
 
-Why this check is required: `models/himed.py` sends HiMed a fixed Hindi system message ("…answer in Hindi"),
-and that conflicts with "Think step by step in English" in the user prompt. We keep the system message
-unchanged on purpose, because the `c2_cot` control used the same one. Changing it would add a second
-difference between the two runs. The risk is that HiMed follows the system message and the 1–2 h
-`c2_cot_en` job comes out "inconclusive".
+History: the first smoke test (`smoke_cot_en`, HiMed's default Hindi system message "…answer in Hindi")
+reasoned in Hindi on 3/3 items, so both CoT runs now use `--system-prompt neutral` (see the amendment above).
 
-- English (or mostly English) reasoning in all 3 → submit `c2_cot_en` in step 2.
-- Hindi reasoning → do **not** submit `c2_cot_en`. Submit the four mixed jobs only and report back: the
-  fix is a neutral system message for *both* `c2_cot` and `c2_cot_en` (two jobs), which is a plan change.
+- English (or mostly English) reasoning in all 3 → submit the two `*_sysneutral` jobs in step 2.
+- Still Hindi → do **not** submit them. HiMed then cannot be made to reason in English by instruction alone;
+  report comparison 3 as "English-reasoning instruction not followed" (plan A5) and decide Phase B from
+  comparisons 1–2 and the flip table.
+
 Then: `rm /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/himed_smoke_*`.
 
 ## 2. The five jobs
@@ -54,8 +59,10 @@ for T in google gemini; do
   sbatch scripts/performance_milu_run.sh himed c0_mix_qhi_oen_$T --language hi_q_en_opts $EX --translations $TR/translations_$T.jsonl
   sbatch scripts/performance_milu_run.sh himed c0_mix_qen_ohi_$T --language en_q_hi_opts $EX --translations $TR/translations_$T.jsonl
 done
-sbatch scripts/performance_milu_run.sh himed c2_cot_en --use-cot --reasoning-language en --max-new-tokens 2048 $EX
+sbatch scripts/performance_milu_run.sh himed c2_cot_sysneutral    --use-cot --system-prompt neutral --max-new-tokens 2048 $EX
+sbatch scripts/performance_milu_run.sh himed c2_cot_en_sysneutral --use-cot --system-prompt neutral --reasoning-language en --max-new-tokens 2048 $EX
 ```
+(Run the neutral smoke test in step 1 first and submit these two only if it reasons in English.)
 
 Each log (`/home/hice1/gchiu6/scratch/logs/perf-milu-*.out`) ends with `Rows: 388`.
 
@@ -73,7 +80,7 @@ On PACE the script writes every run to `.../performance_eval_outputs/milu_hi_med
 cd ~/"Desktop/Research/Baseline Evaluation/.worktrees/step1"
 mkdir -p performance_eval/outputs/phase_a
 scp '<pace-login>:/home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/himed_c0_mix_*_raw.csv*' performance_eval/outputs/phase_a/
-scp '<pace-login>:/home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/himed_c2_cot_en_raw.csv*' performance_eval/outputs/phase_a/
+scp '<pace-login>:/home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/himed_c2_cot*_sysneutral_raw.csv*' performance_eval/outputs/phase_a/
 ```
 
 ## 4. Build the two reports (laptop)
@@ -89,8 +96,8 @@ for T in google gemini; do
     --cell en:first_letter:$E/himed_c0_en_${T}_raw.csv \
     --cell q_hi_o_en:first_letter:$P/himed_c0_mix_qhi_oen_${T}_raw.csv \
     --cell q_en_o_hi:first_letter:$P/himed_c0_mix_qen_ohi_${T}_raw.csv \
-    --cell cot_hi:after_marker:$H/himed_c2_cot_raw.csv \
-    --cell cot_en:after_marker:$P/himed_c2_cot_en_raw.csv
+    --cell cot_hi:after_marker:$P/himed_c2_cot_sysneutral_raw.csv \
+    --cell cot_en:after_marker:$P/himed_c2_cot_en_sysneutral_raw.csv
 done
 ```
 

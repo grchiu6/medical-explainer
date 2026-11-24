@@ -38,7 +38,8 @@
 #     sbatch scripts/performance_milu_run.sh himed c0_mix_qen_ohi_google --language en_q_hi_opts $EX --translations performance_eval/data/milu_en/translations_google.jsonl
 #     sbatch scripts/performance_milu_run.sh himed c0_mix_qhi_oen_gemini --language hi_q_en_opts $EX --translations performance_eval/data/milu_en/translations_gemini.jsonl
 #     sbatch scripts/performance_milu_run.sh himed c0_mix_qen_ohi_gemini --language en_q_hi_opts $EX --translations performance_eval/data/milu_en/translations_gemini.jsonl
-#     sbatch scripts/performance_milu_run.sh himed c2_cot_en --use-cot --reasoning-language en --max-new-tokens 2048 $EX
+#     sbatch scripts/performance_milu_run.sh himed c2_cot_sysneutral --use-cot --system-prompt neutral --max-new-tokens 2048 $EX
+#     sbatch scripts/performance_milu_run.sh himed c2_cot_en_sysneutral --use-cot --system-prompt neutral --reasoning-language en --max-new-tokens 2048 $EX
 #
 # Then compare conditions. The analyze mode must match the condition:
 # first_letter for non-CoT conditions, after_marker for CoT conditions.
