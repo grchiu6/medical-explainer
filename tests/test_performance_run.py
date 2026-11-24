@@ -40,7 +40,8 @@ def test_run_condition_resumes_by_item_id_skipping_done_rows(tmp_path):
 def test_run_condition_passes_fewshot_pool_into_prompt_when_enabled(tmp_path, monkeypatch):
     captured = {}
 
-    def fake_build_prompt(question_with_options, n_options, use_cot=False, exemplars=None, passages=None, language="hi"):
+    def fake_build_prompt(question_with_options, n_options, use_cot=False, exemplars=None, passages=None, language="hi",
+                          reasoning_language=None):
         captured["exemplars"] = exemplars
         return "PROMPT"
 
@@ -466,3 +467,39 @@ def test_mixed_default_output_dir_is_en(tmp_path, fakes, monkeypatch):
     run_mod.main(["--model", "himed", "--condition", "c", "--language", "hi_q_en_opts", "--limit", "1",
                   "--translations", str(tr)])
     assert (tmp_path / "pkg" / "outputs" / "milu_en_med" / "himed_c_raw.csv").is_file()
+
+
+def test_reasoning_language_requires_cot_cli(tmp_path, fakes):
+    with pytest.raises(SystemExit):
+        run_mod.main(["--model", "himed", "--condition", "c", "--reasoning-language", "en",
+                      "--output-dir", str(tmp_path)])
+
+
+def test_sidecar_reasoning_language_only_when_set(tmp_path, fakes):
+    import json
+
+    run_mod.main(["--model", "himed", "--condition", "a", "--use-cot", "--limit", "1", "--output-dir", str(tmp_path)])
+    cfg = json.loads((tmp_path / "himed_a_raw.csv.config.json").read_text(encoding="utf-8"))
+    assert "reasoning_language" not in cfg
+    run_mod.main(["--model", "himed", "--condition", "b", "--use-cot", "--reasoning-language", "en", "--limit", "1",
+                  "--output-dir", str(tmp_path)])
+    cfg = json.loads((tmp_path / "himed_b_raw.csv.config.json").read_text(encoding="utf-8"))
+    assert cfg["reasoning_language"] == "en"
+    assert "Think step by step in English." in fakes["prompts"][-1]
+
+
+def test_old_sidecar_resume_not_refused_by_new_key(tmp_path, fakes):
+    """A run whose sidecar predates reasoning_language still resumes (key absent on both sides)."""
+    run_mod.main(["--model", "himed", "--condition", "a", "--use-cot", "--limit", "1", "--output-dir", str(tmp_path)])
+    run_mod.main(["--model", "himed", "--condition", "a", "--use-cot", "--limit", "2", "--output-dir", str(tmp_path)])
+    rows = list(csv.DictReader(open(tmp_path / "himed_a_raw.csv", encoding="utf-8")))
+    assert len(rows) == 2
+
+
+def test_run_condition_passes_reasoning_language(tmp_path):
+    items = [{"id": "m1", "question_with_options": "Q1?\nA. x\nB. y", "answer_letter": "A", "n_options": 2}]
+    seen = []
+    run_condition(items, [], get_answer_fn=lambda p, gen_kwargs=None: seen.append(p) or "Answer: A",
+                  use_cot=True, use_fewshot=False, gen_kwargs={}, output_path=tmp_path / "o.csv",
+                  reasoning_language="en")
+    assert "Think step by step in English." in seen[0]

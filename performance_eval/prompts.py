@@ -33,6 +33,9 @@ _LANGUAGE_PHRASES = {
 }
 LANGUAGES = tuple(_LANGUAGE_PHRASES)
 _MIXED_LANGUAGES = ("hi_q_en_opts", "en_q_hi_opts")
+# --reasoning-language value -> phrase used in the CoT reasoning instructions only.
+_REASONING_PHRASES = {"hi": "in Hindi", "en": "in English"}
+_REASONING_SLOT = "\x00REASONING\x00"
 
 
 def _make_letter_list(n_options: int) -> str:
@@ -50,6 +53,7 @@ def build_prompt(
     exemplars: list[dict] | None = None,
     passages: list[dict] | None = None,
     language: str = "hi",
+    reasoning_language: str | None = None,
 ) -> str:
     """Build the prompt for one item under one condition.
 
@@ -60,11 +64,20 @@ def build_prompt(
     language: "hi" (default; prompt text unchanged), "en" for translated items (every "in Hindi"
     becomes "in English"), or a mixed value ("hi_q_en_opts" / "en_q_hi_opts") that changes the
     question description only; mixed values are baseline-only (no CoT).
+    reasoning_language: CoT only. None (default) = reason in the item language, prompt unchanged.
+    "hi"/"en" changes only "Think step by step in ..." and the closing reasoning cue; the
+    question description still follows language.
     """
     if language not in _LANGUAGE_PHRASES:
         raise ValueError(f"language must be one of {LANGUAGES}, got {language!r}")
     if use_cot and language in _MIXED_LANGUAGES:
         raise ValueError(f"language {language!r} is not supported with CoT")
+    if reasoning_language is not None:
+        if not use_cot:
+            raise ValueError("reasoning_language requires use_cot")
+        if reasoning_language not in _REASONING_PHRASES:
+            raise ValueError(f"reasoning_language must be one of {sorted(_REASONING_PHRASES)}, "
+                             f"got {reasoning_language!r}")
     parts = []
     if passages:
         blocks = [
@@ -79,14 +92,16 @@ def build_prompt(
         ]
         parts.append("Here are example questions:\n\n" + "\n\n".join(blocks))
 
-    template = _COT_INSTRUCTION if use_cot else _BASELINE_INSTRUCTION
     lang = _LANGUAGE_PHRASES[language]
-    parts.append(template.format(letters=_make_letter_list(n_options)).replace("in Hindi", lang))
+    reasoning = lang if reasoning_language is None else _REASONING_PHRASES[reasoning_language]
+    # Reasoning phrases go through a slot so the question-description replacement can't touch them.
+    template = (_COT_INSTRUCTION.replace("step by step in Hindi", f"step by step {_REASONING_SLOT}")
+                if use_cot else _BASELINE_INSTRUCTION)
+    instruction = template.format(letters=_make_letter_list(n_options)).replace("in Hindi", lang)
+    parts.append(instruction.replace(_REASONING_SLOT, reasoning))
 
     # CoT: end on a reasoning cue (not "Answer"), so the model reasons first
     # and only then writes the final `Answer: X` line.
-    closing = (
-        "Reasoning (step by step, in Hindi):" if use_cot else "Answer (single letter only):"
-    )
-    parts.append(f"Question: {question_with_options}\n\n{closing.replace('in Hindi', lang)}")
+    closing = f"Reasoning (step by step, {reasoning}):" if use_cot else "Answer (single letter only):"
+    parts.append(f"Question: {question_with_options}\n\n{closing}")
     return "\n\n".join(parts)

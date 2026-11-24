@@ -179,6 +179,7 @@ def run_condition(
     output_path: Path,
     passages: dict[str, list[dict]] | None = None,
     language: str = "hi",
+    reasoning_language: str | None = None,
 ) -> None:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -202,6 +203,7 @@ def run_condition(
                 exemplars=fewshot_pool if use_fewshot else None,
                 passages=passages[item["id"]] if passages is not None else None,
                 language=language,
+                reasoning_language=reasoning_language,
             )
             answer = get_answer_fn(prompt, gen_kwargs=gen_kwargs)
             writer.writerow({
@@ -249,7 +251,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--translations", type=Path, default=None,
                         help="translations JSONL (performance_eval/data/milu_en/translations_*.jsonl); "
                              "required with any --language other than hi")
+    parser.add_argument("--reasoning-language", choices=["hi", "en"], default=None,
+                        help="CoT only: language of the step-by-step reasoning (default: the item language); "
+                             "the question description is unchanged")
     args = parser.parse_args(argv)
+    if args.reasoning_language is not None and not args.use_cot:
+        parser.error("--reasoning-language requires --use-cot")
     if args.language != "hi" and args.translations is None:
         parser.error(f"--language {args.language} requires --translations")
     if args.language != "hi" and args.use_fewshot:
@@ -314,6 +321,8 @@ def main(argv: list[str] | None = None) -> None:
         "language": args.language,
         "translations_sha256": (hashlib.sha256(args.translations.read_bytes()).hexdigest()
                                 if args.translations is not None else None),
+        # Only when set, so sidecars written before this flag existed still match on resume.
+        **({"reasoning_language": args.reasoning_language} if args.reasoning_language is not None else {}),
     })
 
     _set_seed(args.gen_seed)
@@ -330,7 +339,7 @@ def main(argv: list[str] | None = None) -> None:
             finally:
                 api_mod.save_usage(usage_path)
     run_condition(test, exemplars, get_answer_fn, args.use_cot, args.use_fewshot, gen_kwargs, output_path,
-                  passages=passages, language=args.language)
+                  passages=passages, language=args.language, reasoning_language=args.reasoning_language)
 
 
 if __name__ == "__main__":

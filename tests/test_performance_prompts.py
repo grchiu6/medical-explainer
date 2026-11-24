@@ -129,3 +129,26 @@ def test_mixed_language_rejects_cot(lang):
 def test_languages_constant():
     from performance_eval.prompts import LANGUAGES
     assert LANGUAGES == ("hi", "en", "hi_q_en_opts", "en_q_hi_opts")
+
+
+def test_cot_english_reasoning_on_hindi():
+    p = _bp(_Q, 4, use_cot=True, reasoning_language="en")
+    assert "medical question in Hindi" in p
+    assert "Think step by step in English." in p
+    assert p.endswith("Reasoning (step by step, in English):")
+    assert "step by step in Hindi" not in p and "in Hindi):" not in p
+
+
+def test_cot_reasoning_language_none_unchanged():
+    assert _bp(_Q, 4, use_cot=True) == _bp(_Q, 4, use_cot=True, reasoning_language=None) == _HINDI_COT
+
+
+def test_cot_reasoning_language_hi_is_same_as_default():
+    assert _bp(_Q, 4, use_cot=True, reasoning_language="hi") == _HINDI_COT
+
+
+def test_reasoning_language_requires_cot():
+    with pytest.raises(ValueError):
+        _bp(_Q, 4, reasoning_language="en")
+    with pytest.raises(ValueError):
+        _bp(_Q, 4, use_cot=True, reasoning_language="fr")
