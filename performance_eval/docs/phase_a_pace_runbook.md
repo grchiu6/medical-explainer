@@ -21,7 +21,7 @@ ls performance_eval/data/excluded_items.csv performance_eval/data/bad_translatio
    performance_eval/data/milu_en/translations_google.jsonl performance_eval/data/milu_en/translations_gemini.jsonl
 ```
 
-## 1. Optional smoke test (≈5 min, mostly model loading)
+## 1. Required smoke test (≈5–10 min, mostly model loading)
 
 Checks the new flags on 3 items before spending GPU hours. Uses throwaway labels; delete the CSVs afterwards.
 
@@ -32,8 +32,17 @@ sbatch scripts/performance_milu_run.sh himed smoke_mix --language hi_q_en_opts $
 sbatch scripts/performance_milu_run.sh himed smoke_cot_en --use-cot --reasoning-language en --max-new-tokens 2048 $EX --limit 3
 ```
 
-Look at the `model_answer` column of `smoke_cot_en`: the reasoning should be in English. If HiMed still reasons
-in Hindi, comparison 3 will come out "inconclusive" (that is a result, not a bug).
+Look at the `model_answer` column of `smoke_cot_en` (the `## Thinking` part): the reasoning should be in English.
+
+Why this check is required: `models/himed.py` sends HiMed a fixed Hindi system message ("…answer in Hindi"),
+and that conflicts with "Think step by step in English" in the user prompt. We keep the system message
+unchanged on purpose, because the `c2_cot` control used the same one. Changing it would add a second
+difference between the two runs. The risk is that HiMed follows the system message and the 1–2 h
+`c2_cot_en` job comes out "inconclusive".
+
+- English (or mostly English) reasoning in all 3 → submit `c2_cot_en` in step 2.
+- Hindi reasoning → do **not** submit `c2_cot_en`. Submit the four mixed jobs only and report back: the
+  fix is a neutral system message for *both* `c2_cot` and `c2_cot_en` (two jobs), which is a plan change.
 Then: `rm /home/hice1/gchiu6/scratch/performance_eval_outputs/milu_hi_med/himed_smoke_*`.
 
 ## 2. The five jobs

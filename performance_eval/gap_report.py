@@ -65,13 +65,7 @@ _ANSWER_RE = re.compile(r"Answer\s*:")
 _THINKING_HEADER_RE = re.compile(r"^\s*##\s*Thinking\s*", re.IGNORECASE)
 
 
-def reasoning_latin_share(response: str) -> float | None:
-    """Latin / (Latin + Devanagari) letters in the reasoning part of a CoT response.
-
-    Reasoning = text before HiMed's '## Response' header if present, else before the last 'Answer:'
-    (else the whole text); a leading '## Thinking' header is dropped. Devanagari counts only
-    alphabetic code points (vowel signs and virama are combining marks, not letters).
-    None when the reasoning part has no letters."""
+def _reasoning_part(response: str) -> str:
     text = response or ""
     if "## Response" in text:
         text = text.split("## Response", 1)[0]
@@ -79,7 +73,31 @@ def reasoning_latin_share(response: str) -> float | None:
         matches = list(_ANSWER_RE.finditer(text))
         if matches:
             text = text[: matches[-1].start()]
-    text = _THINKING_HEADER_RE.sub("", text)
+    return _THINKING_HEADER_RE.sub("", text)
+
+
+def reasoning_latin_word_share(response: str) -> float | None:
+    """Sensitivity check for reasoning_latin_share: share of words (whitespace tokens) that contain Latin
+    letters among words containing Latin or Devanagari letters. Not used by the decision rule; reported so
+    code-mixed reasoning (English words are longer in letters) is visible. None if no such words."""
+    latin = deva = 0
+    for w in _reasoning_part(response).split():
+        has_l, has_d = bool(_LATIN_RE.search(w)), any(c.isalpha() for c in _DEVANAGARI_LETTER_RE.findall(w))
+        if has_l and not has_d:
+            latin += 1
+        elif has_d and not has_l:
+            deva += 1
+    return None if latin + deva == 0 else latin / (latin + deva)
+
+
+def reasoning_latin_share(response: str) -> float | None:
+    """Latin / (Latin + Devanagari) letters in the reasoning part of a CoT response.
+
+    Reasoning = text before HiMed's '## Response' header if present, else before the last 'Answer:'
+    (else the whole text); a leading '## Thinking' header is dropped. Devanagari counts only
+    alphabetic code points (vowel signs and virama are combining marks, not letters).
+    None when the reasoning part has no letters."""
+    text = _reasoning_part(response)
     latin = len(_LATIN_RE.findall(text))
     deva = sum(c.isalpha() for c in _DEVANAGARI_LETTER_RE.findall(text))
     if latin + deva == 0:
@@ -87,11 +105,13 @@ def reasoning_latin_share(response: str) -> float | None:
     return latin / (latin + deva)
 
 
-def compliance_rate(responses: list[str]) -> float | None:
-    """Share of responses whose reasoning is mostly (>= 50%) Latin; no-letter responses count as not."""
+def compliance_rate(responses: list[str], share_fn=None) -> float | None:
+    """Share of responses whose reasoning is mostly (>= 50%) Latin; no-letter responses count as not.
+    share_fn defaults to the letter-level reasoning_latin_share used by the rule (plan A5)."""
     if not responses:
         return None
-    shares = [reasoning_latin_share(r) for r in responses]
+    share_fn = share_fn or reasoning_latin_share
+    shares = [share_fn(r) for r in responses]
     return sum(s is not None and s >= MOSTLY_LATIN for s in shares) / len(shares)
 
 
@@ -261,10 +281,14 @@ def main(argv: list[str] | None = None) -> None:
     compliance_lines = []
     for name, label in (("cot_en", "c2_cot_en"), ("cot_hi", "c2_cot")):
         if name in answers:
-            compliance_lines.append(f"- {label}: {_pct(compliance_rate(list(answers[name].values())))} "
+            resp = list(answers[name].values())
+            compliance_lines.append(f"- {label}: {_pct(compliance_rate(resp))} "
                                     "responses with mostly-English reasoning"
-                                    + (f" (threshold {MIN_COMPLIANCE * 100:.0f}%)" if name == "cot_en" else
-                                       " (contrast)"))
+                                    + (f" (threshold {MIN_COMPLIANCE * 100:.0f}%; used by the rule)" if name == "cot_en"
+                                       else " (contrast)")
+                                    + f"; word-level sensitivity check: "
+                                      f"{_pct(compliance_rate(resp, share_fn=reasoning_latin_word_share))} "
+                                      "(not used by the rule)")
     comps = run_comparisons(cells)
     report = build_report(cells, comps, localize(cells, comps, compliance), n_info, compliance_lines)
     args.out.parent.mkdir(parents=True, exist_ok=True)

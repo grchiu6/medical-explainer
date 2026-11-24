@@ -128,3 +128,17 @@ def test_cli_rejects_unknown_cell_and_mode(tmp_path):
         gr.main(["--cell", f"xx:first_letter:{tmp_path / 'a.csv'}", "--out", str(tmp_path / "o.md")])
     with pytest.raises(SystemExit):
         gr.main(["--cell", f"hi:bogus:{tmp_path / 'a.csv'}", "--out", str(tmp_path / "o.md")])
+
+
+def test_word_share_counts_words_not_letters():
+    # 2 English words (many letters) + 3 Hindi words: letter share > 0.5 but word share = 0.4
+    text = "## Thinking\nhypothyroidism thyroxine यकृत में रोग\n## Response\nB."
+    assert gr.reasoning_latin_share(text) > 0.5
+    assert gr.reasoning_latin_word_share(text) == pytest.approx(0.4)
+    assert gr.reasoning_latin_word_share("Answer: B") is None
+
+
+def test_report_shows_word_level_compliance(tmp_path):
+    msgs = ["hypothyroidism thyroxine यकृत में रोग\nAnswer: A"] * 3
+    assert gr.compliance_rate(msgs) == 1.0
+    assert gr.compliance_rate(msgs, share_fn=gr.reasoning_latin_word_share) == 0.0
