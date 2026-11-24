@@ -503,3 +503,32 @@ def test_run_condition_passes_reasoning_language(tmp_path):
                   use_cot=True, use_fewshot=False, gen_kwargs={}, output_path=tmp_path / "o.csv",
                   reasoning_language="en")
     assert "Think step by step in English." in seen[0]
+
+
+@pytest.mark.parametrize("flags,language,reasoning", [
+    (["--language", "hi_q_en_opts", "--translations", "{tr}"], "hi_q_en_opts", None),
+    (["--language", "en_q_hi_opts", "--translations", "{tr}"], "en_q_hi_opts", None),
+    (["--use-cot", "--reasoning-language", "en", "--max-new-tokens", "2048"], "hi", "en"),
+])
+def test_phase_a_invocations_parse(tmp_path, fakes, flags, language, reasoning):
+    """The exact Phase A runbook flag sets run end-to-end (2 items) and record their config."""
+    import json
+
+    from performance_eval.data_milu import split_test_fewshot
+
+    test, _ = split_test_fewshot(_fake_items(), fewshot_n=10, seed=42)
+    tr = _write_translations(tmp_path, test)
+    ex = tmp_path / "ex.csv"
+    ex.write_text("item_id,reason\n", encoding="utf-8")
+    run_mod.main(["--model", "himed", "--condition", "phase_a", "--limit", "2", "--exclude-file", str(ex),
+                  "--exclude-file", str(ex), "--output-dir", str(tmp_path),
+                  *[f.format(tr=tr) for f in flags]])
+    rows = list(csv.DictReader(open(tmp_path / "himed_phase_a_raw.csv", encoding="utf-8")))
+    assert len(rows) == 2
+    cfg = json.loads((tmp_path / "himed_phase_a_raw.csv.config.json").read_text(encoding="utf-8"))
+    assert cfg["language"] == language
+    assert cfg.get("reasoning_language") == reasoning
+    if language == "hi_q_en_opts":
+        assert rows[0]["question_with_options"].startswith("q") and "A. opt A" in rows[0]["question_with_options"]
+    if language == "en_q_hi_opts":
+        assert rows[0]["question_with_options"].startswith("EN ") and "A. a" in rows[0]["question_with_options"]

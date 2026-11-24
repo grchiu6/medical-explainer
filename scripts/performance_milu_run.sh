@@ -32,6 +32,13 @@
 #     sbatch scripts/performance_milu_run.sh himed c0_en_google --language en --exclude-file performance_eval/data/excluded_items.csv --exclude-file performance_eval/data/bad_translation_items.csv --translations performance_eval/data/milu_en/translations_google.jsonl
 #     sbatch scripts/performance_milu_run.sh nanda c0_en_google --language en --exclude-file performance_eval/data/excluded_items.csv --exclude-file performance_eval/data/bad_translation_items.csv --translations performance_eval/data/milu_en/translations_google.jsonl
 #     # (after the Gemini translation exists) same with c0_en_gemini + translations_gemini.jsonl
+#     # Phase A gap localization (performance_eval/docs/phase_a_pace_runbook.md): 5 HiMed jobs.
+#     EX="--exclude-file performance_eval/data/excluded_items.csv --exclude-file performance_eval/data/bad_translation_items.csv"
+#     sbatch scripts/performance_milu_run.sh himed c0_mix_qhi_oen_google --language hi_q_en_opts $EX --translations performance_eval/data/milu_en/translations_google.jsonl
+#     sbatch scripts/performance_milu_run.sh himed c0_mix_qen_ohi_google --language en_q_hi_opts $EX --translations performance_eval/data/milu_en/translations_google.jsonl
+#     sbatch scripts/performance_milu_run.sh himed c0_mix_qhi_oen_gemini --language hi_q_en_opts $EX --translations performance_eval/data/milu_en/translations_gemini.jsonl
+#     sbatch scripts/performance_milu_run.sh himed c0_mix_qen_ohi_gemini --language en_q_hi_opts $EX --translations performance_eval/data/milu_en/translations_gemini.jsonl
+#     sbatch scripts/performance_milu_run.sh himed c2_cot_en --use-cot --reasoning-language en --max-new-tokens 2048 $EX
 #
 # Then compare conditions. The analyze mode must match the condition:
 # first_letter for non-CoT conditions, after_marker for CoT conditions.
