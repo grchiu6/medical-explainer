@@ -110,9 +110,25 @@ def load_english_items(translations_path, hindi_items: list[dict], drop_ids=froz
 
     Keeps id, answer_letter and n_options, so English and Hindi runs are paired by item_id.
     Items in drop_ids are skipped; any other item without a translation is an error."""
+    return load_mixed_items(translations_path, hindi_items, "en", "en", drop_ids=drop_ids)
+
+
+_ITEM_LANGS = ("hi", "en")
+
+
+def load_mixed_items(translations_path, hindi_items: list[dict], question_lang: str, options_lang: str,
+                     drop_ids=frozenset()) -> list[dict]:
+    """Items whose stem and options each come from Hindi (the item itself) or English (the translation).
+
+    Same validation as the English loader: missing / hard-flagged / option-key-mismatched translations
+    raise ValueError even when only one part is English, so every language setup covers the same items.
+    English parts pass through _clean; Hindi parts are the item's own question/options. With
+    ("hi", "hi") the result equals the original question_with_options byte-for-byte."""
     import json
     from pathlib import Path
 
+    if question_lang not in _ITEM_LANGS or options_lang not in _ITEM_LANGS:
+        raise ValueError(f"question_lang/options_lang must be in {_ITEM_LANGS}, got {question_lang!r}/{options_lang!r}")
     recs = {}
     for line in Path(translations_path).read_text(encoding="utf-8").splitlines():
         if line.strip():
@@ -132,7 +148,9 @@ def load_english_items(translations_path, hindi_items: list[dict], drop_ids=froz
     out = []
     for it in kept:
         r = recs[it["id"]]
-        options = {l: _clean(r["options"][l]) for l in sorted(it["options"])}
-        out.append({**it, "question": r["question"], "options": options,
-                    "question_with_options": _format_qwo(r["question"], options)})
+        question = r["question"] if question_lang == "en" else it["question"]
+        options = ({l: _clean(r["options"][l]) for l in sorted(it["options"])} if options_lang == "en"
+                   else dict(it["options"]))
+        out.append({**it, "question": question, "options": options,
+                    "question_with_options": _format_qwo(question, options)})
     return out

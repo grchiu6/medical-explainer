@@ -24,7 +24,15 @@ _PASSAGES_HEADER = (
     "question. Use them only if they help."
 )
 PASSAGE_MAX_CHARS = 1000
-_LANGUAGE_NAMES = {"hi": "Hindi", "en": "English"}
+# --language value -> phrase replacing "in Hindi" in the question description (plan A3).
+_LANGUAGE_PHRASES = {
+    "hi": "in Hindi",
+    "en": "in English",
+    "hi_q_en_opts": "in Hindi (answer options in English)",
+    "en_q_hi_opts": "in English (answer options in Hindi)",
+}
+LANGUAGES = tuple(_LANGUAGE_PHRASES)
+_MIXED_LANGUAGES = ("hi_q_en_opts", "en_q_hi_opts")
 
 
 def _make_letter_list(n_options: int) -> str:
@@ -49,11 +57,14 @@ def build_prompt(
     rendered before the target question, in the order given.
     passages: optional retrieved passages ({"title", "content"}); rendered as a
     reference block that always comes first. None leaves the prompt unchanged.
-    language: "hi" (default; prompt text unchanged) or "en" for translated items,
-    where every "in Hindi" becomes "in English".
+    language: "hi" (default; prompt text unchanged), "en" for translated items (every "in Hindi"
+    becomes "in English"), or a mixed value ("hi_q_en_opts" / "en_q_hi_opts") that changes the
+    question description only; mixed values are baseline-only (no CoT).
     """
-    if language not in _LANGUAGE_NAMES:
-        raise ValueError(f"language must be one of {sorted(_LANGUAGE_NAMES)}, got {language!r}")
+    if language not in _LANGUAGE_PHRASES:
+        raise ValueError(f"language must be one of {LANGUAGES}, got {language!r}")
+    if use_cot and language in _MIXED_LANGUAGES:
+        raise ValueError(f"language {language!r} is not supported with CoT")
     parts = []
     if passages:
         blocks = [
@@ -69,7 +80,7 @@ def build_prompt(
         parts.append("Here are example questions:\n\n" + "\n\n".join(blocks))
 
     template = _COT_INSTRUCTION if use_cot else _BASELINE_INSTRUCTION
-    lang = f"in {_LANGUAGE_NAMES[language]}"
+    lang = _LANGUAGE_PHRASES[language]
     parts.append(template.format(letters=_make_letter_list(n_options)).replace("in Hindi", lang))
 
     # CoT: end on a reasoning cue (not "Answer"), so the model reasons first

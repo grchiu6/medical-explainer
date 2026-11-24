@@ -156,3 +156,56 @@ def test_shuffle_deterministic_and_non_mutating():
     assert shuffle_item_options(it, 5) == shuffle_item_options(it, 5)
     assert it == snap
     assert any(shuffle_item_options(it, s)["options"] != it["options"] for s in range(10))
+
+
+# --- Phase A: mixed-language items -----------------------------------------------------------
+
+def _mixed_fixture(tmp_path):
+    import json
+
+    hi = {"id": "i1", "question": "कौन सा विटामिन?",
+          "options": {"A": "विटामिन A", "B": "विटामिन B", "C": "विटामिन C", "D": "विटामिन D"},
+          "answer_letter": "C", "n_options": 4}
+    hi["question_with_options"] = data_milu._format_qwo(hi["question"], hi["options"])
+    p = tmp_path / "t.jsonl"
+    p.write_text(json.dumps({"item_id": "i1", "question": "Which vitamin?",
+                             "options": {"A": "Vitamin  A", "B": "Vitamin B", "C": "Vitamin\nC", "D": "Vitamin D"},
+                             "flags": []}, ensure_ascii=False) + "\n", encoding="utf-8")
+    return p, hi
+
+
+def test_mixed_hi_hi_is_identity(tmp_path):
+    p, hi = _mixed_fixture(tmp_path)
+    [it] = data_milu.load_mixed_items(p, [hi], "hi", "hi")
+    assert it["question_with_options"] == hi["question_with_options"]
+
+
+def test_mixed_hi_question_en_options(tmp_path):
+    p, hi = _mixed_fixture(tmp_path)
+    [it] = data_milu.load_mixed_items(p, [hi], "hi", "en")
+    lines = it["question_with_options"].split("\n")
+    assert lines[0] == "कौन सा विटामिन?"
+    assert lines[1:] == ["A. Vitamin A", "B. Vitamin B", "C. Vitamin C", "D. Vitamin D"]
+    assert it["id"] == "i1" and it["answer_letter"] == "C" and it["n_options"] == 4
+
+
+def test_mixed_en_question_hi_options(tmp_path):
+    p, hi = _mixed_fixture(tmp_path)
+    [it] = data_milu.load_mixed_items(p, [hi], "en", "hi")
+    lines = it["question_with_options"].split("\n")
+    assert lines[0] == "Which vitamin?"
+    assert lines[1:] == ["A. विटामिन A", "B. विटामिन B", "C. विटामिन C", "D. विटामिन D"]
+    assert it["id"] == "i1" and it["answer_letter"] == "C"
+
+
+def test_mixed_validates_like_english_loader(tmp_path):
+    p, hi = _mixed_fixture(tmp_path)
+    with pytest.raises(ValueError, match="i9"):
+        data_milu.load_mixed_items(p, [{**hi, "id": "i9"}], "hi", "en")
+    with pytest.raises(ValueError):
+        data_milu.load_mixed_items(p, [hi], "hi", "fr")
+
+
+def test_load_english_items_unchanged(tmp_path):
+    p, hi = _mixed_fixture(tmp_path)
+    assert data_milu.load_english_items(p, [hi]) == data_milu.load_mixed_items(p, [hi], "en", "en")

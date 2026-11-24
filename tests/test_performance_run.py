@@ -429,3 +429,40 @@ def test_run_en_rejects_shuffle(tmp_path, fakes):
     with pytest.raises(SystemExit):
         run_mod.main(["--model", "himed", "--condition", "c", "--language", "en", "--shuffle-options",
                       "--translations", str(tmp_path / "t.jsonl"), "--output-dir", str(tmp_path)])
+
+
+# --- Phase A: mixed-language and English-reasoning runs ---------------------------------------
+
+def _write_translations(tmp_path, items):
+    import json
+
+    tr = tmp_path / "t.jsonl"
+    tr.write_text("".join(json.dumps({"item_id": t["id"], "question": f"EN {t['id']}",
+                                      "options": {c: f"opt {c}" for c in "ABCD"}}) + "\n" for t in items),
+                  encoding="utf-8")
+    return tr
+
+
+@pytest.mark.parametrize("lang", ["hi_q_en_opts", "en_q_hi_opts"])
+def test_mixed_requires_translations(tmp_path, fakes, lang):
+    with pytest.raises(SystemExit):
+        run_mod.main(["--model", "himed", "--condition", "c", "--language", lang, "--output-dir", str(tmp_path)])
+
+
+@pytest.mark.parametrize("lang", ["hi_q_en_opts", "en_q_hi_opts"])
+@pytest.mark.parametrize("flag", ["--use-cot", "--use-fewshot", "--shuffle-options"])
+def test_mixed_rejects_cot_fewshot_shuffle(tmp_path, fakes, lang, flag):
+    tr = _write_translations(tmp_path, _fake_items())
+    with pytest.raises(SystemExit):
+        run_mod.main(["--model", "himed", "--condition", "c", "--language", lang, flag,
+                      "--translations", str(tr), "--output-dir", str(tmp_path)])
+
+
+def test_mixed_default_output_dir_is_en(tmp_path, fakes, monkeypatch):
+    from pathlib import Path
+
+    tr = _write_translations(tmp_path, _fake_items())
+    monkeypatch.setattr(run_mod, "__file__", str(tmp_path / "pkg" / "run.py"))
+    run_mod.main(["--model", "himed", "--condition", "c", "--language", "hi_q_en_opts", "--limit", "1",
+                  "--translations", str(tr)])
+    assert (tmp_path / "pkg" / "outputs" / "milu_en_med" / "himed_c_raw.csv").is_file()

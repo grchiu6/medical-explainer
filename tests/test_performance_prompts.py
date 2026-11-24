@@ -108,3 +108,24 @@ def test_english_prompt_says_english(cot):
 def test_unknown_language_raises():
     with pytest.raises(ValueError):
         _bp(_Q, 4, language="fr")
+
+
+# --- Phase A -------------------------------------------------------------------------------
+
+def test_mixed_language_question_description():
+    p = _bp(_Q, 4, language="hi_q_en_opts")
+    assert "medical question in Hindi (answer options in English)" in p
+    assert p.endswith("Answer (single letter only):")
+    p = _bp(_Q, 4, language="en_q_hi_opts")
+    assert "medical question in English (answer options in Hindi)" in p
+
+
+@pytest.mark.parametrize("lang", ["hi_q_en_opts", "en_q_hi_opts"])
+def test_mixed_language_rejects_cot(lang):
+    with pytest.raises(ValueError):
+        _bp(_Q, 4, use_cot=True, language=lang)
+
+
+def test_languages_constant():
+    from performance_eval.prompts import LANGUAGES
+    assert LANGUAGES == ("hi", "en", "hi_q_en_opts", "en_q_hi_opts")
